@@ -21,8 +21,8 @@
       "name": "OpenAI-compatible structured annotation",
       "description": "Implement the OpenAI-compatible client, structured-output modes, response parsing, schema checks, and MASB cross-field validation.",
       "dependencies": ["feat-001", "feat-002"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-05: RED `go test ./internal/service -run TestValidator -v` failed for missing Validator; GREEN `go test ./internal/service -run TestValidator -v`, `go test ./internal/facade`, `go test -race ./internal/facade`, and `./init.sh` all passed."
     },
     {
       "id": "feat-004",

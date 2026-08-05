@@ -1,9 +1,13 @@
 # Session Handoff
 
+## Active Work
+
+`feat-003` is complete. The next unblocked feature is `feat-004`, which should consume the existing `service.Completer` and `service.Validator` boundaries without changing import or validation contracts.
+
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: `feat-001` and `feat-002` are complete; `feat-003` is next.
+- Current status: `feat-001` through `feat-003` are complete; `feat-004` is next.
 - Branch / commit: `feature/sendllm-implementation`; base setup commit `7259b09`.
 
 ## Completed This Session
@@ -33,6 +37,9 @@
 | Go verification | `./init.sh` | pass | Formatting, unit tests, race tests, and vet all passed. |
 | Task 2 DAO/importer | `go test ./internal/dao ./internal/service -run 'Test(Store|Import)' -v` | pass | Covers task hash identity, duplicate source hash, JSONL failures, and rollback. |
 | Task 2 race/fuzz | `go test -race ./internal/dao ./internal/service -run 'Test(Store|Import)'`; `go test ./internal/service -run '^$' -fuzz FuzzParseJSONL -fuzztime 1s` | pass | No races; parser fuzz smoke passed. |
+| Task 3 validation | `go test ./internal/service -run TestValidator -v` | pass | Covers valid unsafe/safe/hard-negative results and strict malformed or cross-field failures. |
+| Task 3 OpenAI facade | `go test ./internal/facade`; `go test -race ./internal/facade` | pass | Covers request modes, auth, usage, status classification, Retry-After, content filters, and response size limit. |
+| Full gate after Task 3 | `./init.sh` | pass | Formatting, full tests, full race tests, and vet passed. |
 
 ## Files Changed
 
@@ -49,6 +56,8 @@
 - `internal/dto/sample.go`, `annotation.go`, `completion.go`, and tests
 - `internal/dao/schema.sql`, `sqlite.go`, `items.go`, `import.go`, and tests
 - `internal/service/importer.go`, tests, and synthetic JSONL fixture
+- `internal/service/completer.go`, `validator.go`, and `validator_test.go`
+- `internal/facade/openai.go` and `openai_test.go`
 - `config/task.example.yaml`, `config/risk-types.yaml`, `config/result-schema.json`
 - `prompts/masb-system.txt`
 
@@ -78,4 +87,4 @@
 
 ## Recommended Next Step
 
-- Implement `feat-003` OpenAI-compatible structured annotation, consuming the persisted pending items from `feat-002` without changing its import invariants.
+- Implement `feat-004` bounded concurrent runner and retry policy, consuming the persisted pending items from `feat-002` and the Task 3 completer and validator boundaries.

@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-08-05
-**Active Feature:** None; `feat-002` completed
+**Active Feature:** None; `feat-003` completed
 
 ## Status
 
@@ -21,12 +21,13 @@
 - [x] Updated final acceptance to require 50-record real-model end-to-end success using `模型配置.md`.
 - [x] Completed `feat-001`: Go module, typed strict YAML configuration, prompt/schema/risk loading, semantic fingerprint, and DTO contracts.
 - [x] Completed `feat-002`: SQLite WAL state store, task semantic identity checks, normalized-source idempotency, atomic JSONL import, and parser fuzz entry point.
+- [x] Completed `feat-003`: OpenAI-compatible Chat Completions facade, structured-output request modes, safe provider error classification, 4 MiB response cap, JSON Schema validation, and MASB cross-field validation.
 
 ### What's Next
 
-1. Begin `feat-003`: OpenAI-compatible structured annotation.
-2. Keep source fields extensible and retain source order in durable state.
-3. Preserve `feat-002` task identity and import-conflict behavior while adding model calls.
+1. Begin `feat-004`: concurrent runner and retry policy.
+2. Consume `service.Completer` and `service.Validator` without altering completed import invariants.
+3. Preserve source order and durable task identity while adding retry scheduling.
 
 ## Blockers / Risks
 

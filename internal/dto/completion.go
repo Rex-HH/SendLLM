@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -13,33 +14,21 @@ type Message struct {
 
 // CompletionRequest 是 OpenAI 兼容聊天补全请求的最小契约。
 type CompletionRequest struct {
-	Model          string         `json:"model"`
-	Messages       []Message      `json:"messages"`
-	Temperature    *float64       `json:"temperature,omitempty"`
-	TopP           *float64       `json:"top_p,omitempty"`
-	MaxTokens      int            `json:"max_tokens,omitempty"`
-	Seed           *int64         `json:"seed,omitempty"`
-	ResponseFormat any            `json:"response_format,omitempty"`
-	Stream         bool           `json:"stream"`
-	ExtraBody      map[string]any `json:"-"`
+	Messages []Message
+	Schema   json.RawMessage
+	Mode     string
 }
 
 // CompletionResponse 是 OpenAI 兼容聊天补全响应的最小契约。
 type CompletionResponse struct {
-	ID      string             `json:"id"`
-	Choices []CompletionChoice `json:"choices"`
-	Usage   CompletionUsage    `json:"usage"`
+	Content      []byte
+	RawResponse  []byte
+	FinishReason string
+	Usage        Usage
 }
 
-// CompletionChoice 表示一个模型候选结果。
-type CompletionChoice struct {
-	Index        int     `json:"index"`
-	Message      Message `json:"message"`
-	FinishReason string  `json:"finish_reason"`
-}
-
-// CompletionUsage 记录供应商报告的 Token 使用量。
-type CompletionUsage struct {
+// Usage 记录供应商报告的 Token 使用量。
+type Usage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
