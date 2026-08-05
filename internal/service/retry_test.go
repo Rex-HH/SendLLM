@@ -42,6 +42,20 @@ func TestRetryPolicyDelay(t *testing.T) {
 	}
 }
 
+func TestRetryPolicyDelayCapsInitialBackoff(t *testing.T) {
+	policy := RetryPolicy{
+		InitialBackoff: 5 * time.Second,
+		MaxBackoff:     4 * time.Second,
+	}
+
+	got := policy.Delay(1, 0, func(limit time.Duration) time.Duration {
+		return limit
+	})
+	if want := 4 * time.Second; got != want {
+		t.Errorf("Delay() = %v, want %v", got, want)
+	}
+}
+
 func TestClassifyFailure(t *testing.T) {
 	tests := []struct {
 		name string

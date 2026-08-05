@@ -34,6 +34,9 @@ func (p RetryPolicy) Delay(attempt int, retryAfter time.Duration, jitter func(ti
 		attempt = 1
 	}
 	limit := p.InitialBackoff
+	if limit > p.MaxBackoff {
+		limit = p.MaxBackoff
+	}
 	for remaining := attempt - 1; remaining > 0 && limit < p.MaxBackoff; remaining-- {
 		limit *= 2
 		if limit > p.MaxBackoff {
