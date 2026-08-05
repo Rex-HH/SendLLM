@@ -100,6 +100,11 @@ func (l *Limiter) Cooldown(until time.Time) {
 	}
 }
 
+// Concurrency 返回限速器允许的最大并发请求数。
+func (l *Limiter) Concurrency() int {
+	return cap(l.semaphore)
+}
+
 func (l *Limiter) waitCooldown(ctx context.Context) error {
 	for {
 		l.mu.Lock()

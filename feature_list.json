@@ -29,8 +29,8 @@
       "name": "Concurrent runner and retry policy",
       "description": "Add the bounded worker pool, concurrency/RPM/TPM limits, shared 429 cooldown, classified retries, format repair, graceful shutdown, and durable retry scheduling.",
       "dependencies": ["feat-002", "feat-003"],
-      "status": "in-progress",
-      "evidence": "2026-08-05: Token 估算、并发/RPM/TPM 限速、共享冷却和重试分类基础完成；`go test ./internal/lib/tokenizer ./internal/lib/limiter ./internal/service -run 'Test(Estimate|Limiter|RetryPolicy|ClassifyFailure)'`、`go test -race ./internal/lib/limiter` 与 `./init.sh` 均通过。Runner 尚未完成，因此保持 in-progress。"
+      "status": "done",
+      "evidence": "2026-08-05: DAO 状态机与 Runner 严格 RED/GREEN 完成；`go test ./internal/dao ./internal/service`、`go test -race ./internal/dao ./internal/service` 和 `./init.sh` 全部通过，覆盖恢复、并发上限、429 共享冷却、5xx 重试、401 停止、格式修复、最终失败与取消退出。"
     },
     {
       "id": "feat-005",

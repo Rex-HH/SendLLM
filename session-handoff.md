@@ -2,12 +2,12 @@
 
 ## Active Work
 
-`feat-004` remains in progress. Its token-estimation, limiter, and retry-policy foundation is complete and verified; the bounded runner remains for the next task.
+`feat-004` is complete and verified. `feat-005` ordered export and CLI wiring is the next unblocked feature.
 
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: `feat-001` through `feat-003` are complete; the `feat-004` foundation is complete and the runner remains in progress.
+- Current status: `feat-001` through `feat-004` are complete; `feat-005` is next.
 - Branch / commit: `feature/sendllm-implementation`; base setup commit `7259b09`.
 
 ## Completed This Session
@@ -27,6 +27,8 @@
 - [x] Added example real-gateway configuration without credentials, complete MASB taxonomy, result Schema, and system prompt.
 - [x] Added SQLite schema and store with WAL, foreign keys, busy timeout, single write connection, task semantic identity, and atomic imports.
 - [x] Added streaming JSONL import with 16 MiB line limit, source normalization hash, duplicate skip, conflict rollback, and fuzz coverage.
+- [x] Added atomic ordered claims, expected-state transitions, attempt persistence, retry scheduling, recovery counts, and next-retry lookup.
+- [x] Added the bounded Runner with owned goroutines, unbuffered handoff, shared cooldown, classified retries, format repair, cancellation, and safe progress callbacks.
 
 ## Verification Evidence
 
@@ -41,6 +43,8 @@
 | Task 3 validation | `go test ./internal/service -run TestValidator -v` | pass | Covers valid unsafe/safe/hard-negative results and strict malformed or cross-field failures. |
 | Task 3 OpenAI facade | `go test ./internal/facade`; `go test -race ./internal/facade` | pass | Covers request modes, auth, usage, status classification, Retry-After, content filters, and response size limit. |
 | Full gate after Task 3 | `./init.sh` | pass | Formatting, full tests, full race tests, and vet passed. |
+| Task 5 DAO and Runner | `go test ./internal/dao ./internal/service`; `go test -race ./internal/dao ./internal/service` | pass | Covers durable state transitions, no repeated success calls, bounded concurrency, retries, repairs, cancellation, and recovery. |
+| Full gate after Task 5 | `./init.sh` | pass | Formatting, all package tests, full race tests, and vet passed outside the port-restricted sandbox. |
 
 ## Files Changed
 
@@ -61,6 +65,7 @@
 - `internal/dao/schema.sql`, `sqlite.go`, `items.go`, `import.go`, and tests
 - `internal/service/importer.go`, tests, and synthetic JSONL fixture
 - `internal/service/completer.go`, `validator.go`, and `validator_test.go`
+- `internal/service/runner.go`, `runner_test.go`, and `progress.go`
 - `internal/facade/openai.go` and `openai_test.go`
 - `config/task.example.yaml`, `config/risk-types.yaml`, `config/result-schema.json`
 - `prompts/masb-system.txt`
@@ -80,6 +85,7 @@
 ## Blockers / Risks
 
 - Actual provider RPM/TPM and structured-output capability require task configuration.
+- The fixed Task 5 `RunnerConfig` does not carry structured-output mode; Runner currently requests `json_schema`, so Task 6 must settle mode propagation before exposing other configured modes.
 
 ## Next Session Startup
 
@@ -91,4 +97,4 @@
 
 ## Recommended Next Step
 
-- Implement the remaining `feat-004` bounded concurrent runner using the verified limiter/retry-policy foundation.
+- Implement `feat-005` ordered export and thin CLI wiring, preserving payload-free operational output.

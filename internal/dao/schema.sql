@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS items (
     request_attempts INTEGER NOT NULL DEFAULT 0,
     repair_attempts INTEGER NOT NULL DEFAULT 0,
     next_attempt_at TEXT,
+    annotation BLOB,
+    error_category TEXT,
+    error_summary TEXT,
     PRIMARY KEY (task_id, trace_id),
     UNIQUE (task_id, input_index),
     FOREIGN KEY (task_id) REFERENCES tasks(id)

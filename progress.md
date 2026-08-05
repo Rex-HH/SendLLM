@@ -3,13 +3,13 @@
 ## Current State
 
 **Last Updated:** 2026-08-05
-**Active Feature:** `feat-004` in progress (limiter and retry-policy foundation)
+**Active Feature:** none; `feat-004` complete, `feat-005` is next
 
 ## Status
 
 ### What's Done
 
-- [x] Completed the `feat-004` foundation: conservative token estimation, bounded concurrency/RPM/TPM limiter, shared 429 cooldown, and classified exponential retry decisions. The runner remains unimplemented.
+- [x] Completed `feat-004`: atomic SQLite item transitions, resumable bounded Runner, durable retries, format repair, shared cooldown, cancellation, and payload-free progress.
 - [x] Confirmed local single-process CLI scope.
 - [x] Confirmed JSONL input and output, SQLite recovery, OpenAI-compatible API, and configurable prompts/model parameters.
 - [x] Confirmed input fields: required `trace_id`, at least one non-empty `prompt` or optional `response`, with unknown fields preserved.
@@ -26,15 +26,16 @@
 
 ### What's Next
 
-1. Implement the bounded `feat-004` runner using the verified limiter and retry-policy foundation.
-2. Consume `service.Completer` and `service.Validator` without altering completed import invariants.
-3. Preserve source order and durable task identity while adding retry scheduling.
+1. Start `feat-005`: ordered success/failure export and thin CLI wiring.
+2. Reuse the Runner's durable counts and annotation/failure fields without exposing audit payloads.
+3. Resolve structured-output mode wiring before supporting `json_object` or `prompt_only` in the CLI.
 
 ## Blockers / Risks
 
 - [ ] The account concurrency limit is reported as approximately 500, but RPM and TPM are not yet known; runtime configuration must remain conservative and observable.
 - [ ] OpenAI-compatible providers differ in JSON Schema and rate-limit-header support; capability mode must be explicit in configuration.
 - [ ] The real gateway may differ in `json_schema` support; Task 7 must test it and use the approved `json_object` fallback only with captured incompatibility evidence.
+- [ ] The fixed Task 5 `RunnerConfig` has no structured-output mode field; Runner currently sends `json_schema`, so Task 6 must resolve mode propagation before wiring other configured modes.
 
 ## Decisions Made
 
@@ -53,6 +54,9 @@
 - `internal/lib/tokenizer/` - Conservative provider-neutral token estimation and tests.
 - `internal/lib/limiter/` - Concurrency, RPM, TPM, shared cooldown, and release-safety limits with race coverage.
 - `internal/service/retry.go`, `internal/service/retry_test.go` - Retry backoff and provider-failure classification.
+- `internal/dao/items.go`, `items_test.go`, `schema.sql` - Atomic claim, expected-state transitions, attempt persistence, counts, retry scheduling, and export fields.
+- `internal/service/runner.go`, `runner_test.go`, `progress.go` - Owned worker lifecycle, retries, format repair, recovery, cancellation, and safe progress.
+- `internal/lib/limiter/limiter.go` - Exposes the validated concurrency bound to the Runner worker owner.
 - `AGENTS.md` - Repository workflow, scope, safety, and Go coding rules.
 - `feature_list.json` - Ordered implementation features and dependencies.
 - `progress.md` - Current durable project state.
@@ -74,7 +78,8 @@
 - [x] Task 1 verification: `./init.sh` passed formatting, unit tests, race tests, and vet.
 - [x] Review fix: Go officially downloaded and verified `modernc.org/sqlite v1.34.5`; `go.sum` now includes module and go.mod checksums.
 - [x] Task 2 verification: DAO/importer narrow tests, race tests, one-second JSONL fuzz smoke, and `./init.sh` all passed.
+- [x] Task 5 verification: `go test ./internal/dao ./internal/service`, `go test -race ./internal/dao ./internal/service`, and `./init.sh` all passed.
 
 ## Notes For Next Session
 
-Continue `feat-004` from the bounded runner only; token estimation, limiter, and retry policy are already verified.
+Start `feat-005` from ordered export and CLI wiring. `feat-004` is complete and verified; do not reopen its worker lifecycle without a failing regression test.
