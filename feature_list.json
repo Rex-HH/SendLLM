@@ -5,7 +5,7 @@
       "name": "Project bootstrap and configuration",
       "description": "Initialize the Go module, CLI entrypoint, typed YAML configuration, prompt/risk taxonomy loading, validation, and example configuration.",
       "dependencies": [],
-      "status": "not-started",
+      "status": "in-progress",
       "evidence": ""
     },
     {

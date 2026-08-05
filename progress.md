@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-08-05
-**Active Feature:** Preparing subagent-driven execution of `feat-001`
+**Active Feature:** `feat-001` - Project bootstrap and configuration
 
 ## Status
 
@@ -18,22 +18,24 @@
 - [x] User approved the persisted Chinese design specification.
 - [x] Wrote and self-reviewed the seven-task implementation plan.
 - [x] Added mandatory minimal-code and Chinese-comment rules to `AGENTS.md` and the plan gate.
+- [x] Updated final acceptance to require 50-record real-model end-to-end success using `模型配置.md`.
 
 ### What's In Progress
 
-- [ ] Commit the new simplicity/comment rules, then start subagent-driven execution.
+- [ ] Implement configuration, prompt/schema loading, and DTO contracts through TDD.
 
 ### What's Next
 
-1. Commit the new repository rules.
-2. Invoke the subagent-driven execution workflow.
-3. Begin `feat-001` and preserve one-feature-at-a-time Harness status.
+1. Complete `feat-001` implementation and focused verification.
+2. Pass the task-scoped spec and quality review.
+3. Begin `feat-002` only after `feat-001` is approved.
 
 ## Blockers / Risks
 
 - [ ] The repository has no Go module or implementation yet; verification commands are intentionally deferred by `init.sh` until `go.mod` exists.
 - [ ] The account concurrency limit is reported as approximately 500, but RPM and TPM are not yet known; runtime configuration must remain conservative and observable.
 - [ ] OpenAI-compatible providers differ in JSON Schema and rate-limit-header support; capability mode must be explicit in configuration.
+- [ ] The real gateway may differ in `json_schema` support; Task 7 must test it and use the approved `json_object` fallback only with captured incompatibility evidence.
 
 ## Decisions Made
 
@@ -44,6 +46,7 @@
 - Use fixed core annotation fields plus task-configurable risk enums and extensions.
 - Apply Rex-HH/uber_go_guide_cn through executable rules in `AGENTS.md`.
 - Treat unnecessary code and abstractions as debt; keep the first release minimal and require concise Chinese Go comments.
+- Final completion requires a real DeepSeek gateway run over all 50 records; fake-provider integration tests are intermediate evidence only.
 
 ## Files Modified This Session
 

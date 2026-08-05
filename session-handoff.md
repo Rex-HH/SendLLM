@@ -3,8 +3,8 @@
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: Persisted Chinese design and implementation plan approved; subagent-driven execution selected.
-- Branch / commit: `main`; rule update pending commit.
+- Current status: Subagent-driven execution active on `feat-001`.
+- Branch / commit: `feature/sendllm-implementation`; base setup commit `7259b09`.
 
 ## Completed This Session
 
@@ -17,6 +17,7 @@
 - [x] Received user approval for the persisted Chinese design.
 - [x] Wrote and self-reviewed the seven-task implementation plan.
 - [x] Added mandatory minimal-code and Chinese-comment rules before implementation.
+- [x] Added the real-model 50-record end-to-end completion gate.
 
 ## Verification Evidence
 
@@ -44,6 +45,7 @@
 - Structured result validation is local and strict.
 - Account concurrency is configurable up to 500, with shared rate-limit cooldown.
 - The first release must use the smallest readable implementation; all necessary Go comments are concise and written in Chinese.
+- Final acceptance uses `deepseek-v4-pro` through the configured real gateway and must produce 50/50 valid output records.
 
 ## Blockers / Risks
 
@@ -59,4 +61,4 @@
 
 ## Recommended Next Step
 
-- The user selected subagent-driven execution. Begin `feat-001` using the required execution skill after committing the new repository rules.
+- Complete and review `feat-001`; do not begin `feat-002` until the review gate passes.
