@@ -53,7 +53,7 @@ README.md                                构建、运行、恢复、限速和结
 
 ---
 
-### 任务 1：Go 工程、配置和数据契约
+### Task 1：Go 工程、配置和数据契约
 
 **对应 Harness 功能：** `feat-001`
 
@@ -283,7 +283,7 @@ git commit -m "feat: add task configuration and data contracts"
 
 ---
 
-### 任务 2：JSONL 流式导入和 SQLite 状态
+### Task 2：JSONL 流式导入和 SQLite 状态
 
 **对应 Harness 功能：** `feat-002`
 
@@ -419,7 +419,7 @@ git commit -m "feat: persist resumable JSONL imports"
 
 ---
 
-### 任务 3：OpenAI 适配器和严格结果校验
+### Task 3：OpenAI 适配器和严格结果校验
 
 **对应 Harness 功能：** `feat-003`
 
@@ -569,7 +569,7 @@ git commit -m "feat: validate OpenAI structured annotations"
 
 ---
 
-### 任务 4：Token 估算、三重限速和重试策略
+### Task 4：Token 估算、三重限速和重试策略
 
 **对应 Harness 功能：** `feat-004` 的基础部分；本任务结束时保持 `in-progress`。
 
@@ -675,7 +675,7 @@ git commit -m "feat: add rate limits and retry policy"
 
 ---
 
-### 任务 5：可恢复并发 Runner 和格式修复
+### Task 5：可恢复并发 Runner 和格式修复
 
 **对应 Harness 功能：** 完成 `feat-004`
 
@@ -829,7 +829,7 @@ git commit -m "feat: run resumable concurrent annotations"
 
 ---
 
-### 任务 6：确定顺序导出、CLI 和操作文档
+### Task 6：确定顺序导出、CLI 和操作文档
 
 **对应 Harness 功能：** `feat-005`
 
@@ -903,7 +903,7 @@ git commit -m "feat: add CLI and ordered JSONL export"
 
 ---
 
-### 任务 7：全量验证、fuzz 冒烟和交付
+### Task 7：全量验证、fuzz 冒烟和交付
 
 **对应 Harness 功能：** `feat-006`
 
