@@ -21,3 +21,6 @@ coverage.out
 # Editor metadata
 .idea/
 .DS_Store
+
+# Isolated implementation worktrees
+.worktrees/
