@@ -13,8 +13,8 @@
       "name": "JSONL import and SQLite state",
       "description": "Import extensible JSONL records, normalize optional response, enforce trace_id idempotency, persist ordered task/item/attempt state, and recover interrupted processing.",
       "dependencies": ["feat-001"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-05: go test ./internal/dao ./internal/service -run 'Test(Store|Import)' -v; go test -race ./internal/dao ./internal/service -run 'Test(Store|Import)'; go test ./internal/service -run '^$' -fuzz FuzzParseJSONL -fuzztime 1s; ./init.sh all passed."
     },
     {
       "id": "feat-003",

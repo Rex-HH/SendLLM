@@ -10,6 +10,7 @@ data/
 
 # SQLite state and journals
 *.db
+*.db-journal
 *.db-shm
 *.db-wal
 
