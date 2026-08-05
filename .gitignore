@@ -1,0 +1,22 @@
+# Credentials and local environment
+.env
+.env.*
+
+# Safety datasets and generated records
+*.jsonl
+!testdata/**/*.jsonl
+data/
+
+# SQLite state and journals
+*.db
+*.db-shm
+*.db-wal
+
+# Local binaries and coverage/profile output
+/sendllm
+coverage.out
+*.prof
+
+# Editor metadata
+.idea/
+.DS_Store

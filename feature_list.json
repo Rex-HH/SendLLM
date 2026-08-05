@@ -1,0 +1,52 @@
+{
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "Project bootstrap and configuration",
+      "description": "Initialize the Go module, CLI entrypoint, typed YAML configuration, prompt/risk taxonomy loading, validation, and example configuration.",
+      "dependencies": [],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-002",
+      "name": "JSONL import and SQLite state",
+      "description": "Import extensible JSONL records, normalize optional response, enforce trace_id idempotency, persist ordered task/item/attempt state, and recover interrupted processing.",
+      "dependencies": ["feat-001"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-003",
+      "name": "OpenAI-compatible structured annotation",
+      "description": "Implement the OpenAI-compatible client, structured-output modes, response parsing, schema checks, and MASB cross-field validation.",
+      "dependencies": ["feat-001", "feat-002"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-004",
+      "name": "Concurrent runner and retry policy",
+      "description": "Add the bounded worker pool, concurrency/RPM/TPM limits, shared 429 cooldown, classified retries, format repair, graceful shutdown, and durable retry scheduling.",
+      "dependencies": ["feat-002", "feat-003"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-005",
+      "name": "Ordered export and operator workflow",
+      "description": "Export successful and failed JSONL deterministically, report safe progress without payload logging, document run/resume/tuning behavior, and provide examples.",
+      "dependencies": ["feat-004"],
+      "status": "not-started",
+      "evidence": ""
+    },
+    {
+      "id": "feat-006",
+      "name": "Full verification and handoff",
+      "description": "Run formatting, unit/integration tests, race detection, vet, parser fuzz smoke checks, and record final evidence and residual risks.",
+      "dependencies": ["feat-005"],
+      "status": "not-started",
+      "evidence": ""
+    }
+  ]
+}
