@@ -4,7 +4,8 @@
 
 # Safety datasets and generated records
 *.jsonl
-!testdata/**/*.jsonl
+!**/testdata/*.jsonl
+!**/testdata/**/*.jsonl
 data/
 
 # SQLite state and journals

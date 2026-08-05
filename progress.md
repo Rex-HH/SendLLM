@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-08-05
-**Active Feature:** Design and harness setup (implementation not started)
+**Active Feature:** Awaiting implementation workflow selection
 
 ## Status
 
@@ -15,16 +15,18 @@
 - [x] Confirmed concurrency, rate limiting, retry, structured validation, export, package layout, and test strategy.
 - [x] Created the repository harness and concrete feature dependency list.
 - [x] Translated the complete persisted design specification into Chinese while preserving technical identifiers.
+- [x] User approved the persisted Chinese design specification.
+- [x] Wrote and self-reviewed the seven-task implementation plan.
 
 ### What's In Progress
 
-- [ ] Obtain user approval for the self-reviewed persisted design specification.
+- [ ] Select inline or subagent-driven plan execution.
 
 ### What's Next
 
-1. Obtain user approval of the written design specification.
-2. Write the implementation plan using the required planning workflow.
-3. Begin `feat-001` only after the plan is approved for execution.
+1. Select the execution workflow requested by the user.
+2. Begin `feat-001` only through that workflow.
+3. Preserve one-feature-at-a-time Harness status throughout execution.
 
 ## Blockers / Risks
 
@@ -54,9 +56,10 @@
 ## Evidence Of Completion
 
 - [x] Harness validation: `100/100`, all five subsystems scored `5/5`.
-- [ ] Design specification reviewed by user.
+- [x] Design specification reviewed and approved by user.
+- [x] Plan self-review: all design sections mapped, no placeholders found, cross-task interfaces aligned.
 - [ ] Go verification available after `go.mod` is created.
 
 ## Notes For Next Session
 
-Do not start implementation until the written design is approved and an implementation plan has been produced.
+Implementation may start after the user selects an execution workflow. Use `docs/superpowers/plans/2026-08-05-sendllm-implementation.md` as the task checklist.

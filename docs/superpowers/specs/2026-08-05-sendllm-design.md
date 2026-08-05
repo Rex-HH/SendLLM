@@ -1,7 +1,7 @@
 # SendLLM 本地安全标注 CLI 设计
 
 日期：2026-08-05
-状态：等待书面设计最终确认
+状态：已批准
 
 ## 1. 目标
 
@@ -46,6 +46,8 @@
 ```
 
 `scene` 可配置为 `prompt`、`response`、`pair` 或 `auto`。使用 `auto` 时，程序根据 `prompt` 和 `response` 中哪些字段非空来推导审查场景。
+
+系统提示词文件是纯文本模板，必须各包含一次 `{{RISK_TYPES}}` 和 `{{RESULT_SCHEMA}}`。加载任务时，程序以稳定排序的风险分类 JSON 和 `output.schema_file` 的完整内容替换这两个占位符。替换后的提示词计入语义指纹；每条样本调用时仍只发送结构化用户数据。
 
 ### 2.3 模型结果
 
@@ -104,8 +106,12 @@ model:
   name: model-name
   structured_output: json_schema
   temperature: 0
+  top_p: 1
   max_tokens: 500
+  seed: 42
   timeout: 60s
+  extra_body:
+    frequency_penalty: 0
 
 prompt:
   system_file: ./prompts/masb-system.txt
@@ -125,11 +131,16 @@ retry:
   max_backoff: 60s
 
 output:
+  schema_file: ./config/result-schema.json
   explanation_min_length: 10
   explanation_max_length: 70
 ```
 
 API Key 的值只能从 `api_key_env` 指定的环境变量读取，不能写入配置、SQLite、日志或输出文件。`structured_output` 必须显式设置为 `json_schema`、`json_object` 或 `prompt_only`，因为不同兼容供应商支持的结构化输出能力并不一致。
+
+`temperature`、`top_p`、`max_tokens` 和 `seed` 是类型化常用参数。供应商特有参数可以放入 `extra_body` 并透传，但不得覆盖 `model`、`messages`、`response_format`、`stream` 或其他由客户端负责的协议核心字段。全部模型参数都计入语义指纹。
+
+`output.schema_file` 指向完整的结果 JSON Schema。同一份 Schema 同时发送给支持 `json_schema` 的模型接口，并用于本地结果校验，避免模型约束和程序约束发生漂移。`risk_types_file` 仍作为风险闭集的唯一来源，由本地语义校验器进行二次约束。
 
 并发数允许配置为 1 至 500，以匹配当前已知的账号并发上限。RPM 或 TPM 设置为零表示不启用对应的主动限速器。建议先以约 64 并发进行校准，再根据实际延迟、429 比例和供应商文档逐步提高。
 
@@ -172,6 +183,8 @@ SQLite 是唯一可信状态源，开启 WAL 模式，并由应用使用单个�
 样本状态包括 `pending`、`processing`、`retry_wait`、`succeeded` 和 `failed`。状态迁移及其对应的调用记录必须在事务中提交。
 
 启动时，如果状态库中存在匹配任务，则从原进度继续。语义指纹包含模型标识和采样参数、系统提示词内容、审查场景策略、风险分类闭集及输出 Schema。如果语义指纹发生变化，程序必须给出明确错误并停止；用户需要使用新的任务或状态文件。并发数、RPM/TPM、重试等待时间、退出等待时间和导出路径等运行参数允许在恢复任务时调整。启动恢复时，遗留的 `processing` 记录重新变为 `pending`，`succeeded` 记录不再调用模型。尝试次数持久化，避免重启后重试次数清零而形成无限循环。
+
+系统保证已经写入 `succeeded` 状态的记录不会再次调用模型。若进程在供应商已经处理请求、但本地尚未来得及提交成功事务的极小窗口内崩溃，恢复后可能再次发送该请求；通用 OpenAI 兼容协议无法提供跨供应商的严格外部恰好一次语义。因此调用语义是至少一次，而最终结果按 `task_id + trace_id` 幂等，只保留一条成功标注。
 
 ## 6. 并发与限速
 
