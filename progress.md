@@ -3,7 +3,7 @@
 ## Current State
 
 **Last Updated:** 2026-08-05
-**Active Feature:** Awaiting implementation workflow selection
+**Active Feature:** Preparing subagent-driven execution of `feat-001`
 
 ## Status
 
@@ -17,16 +17,17 @@
 - [x] Translated the complete persisted design specification into Chinese while preserving technical identifiers.
 - [x] User approved the persisted Chinese design specification.
 - [x] Wrote and self-reviewed the seven-task implementation plan.
+- [x] Added mandatory minimal-code and Chinese-comment rules to `AGENTS.md` and the plan gate.
 
 ### What's In Progress
 
-- [ ] Select inline or subagent-driven plan execution.
+- [ ] Commit the new simplicity/comment rules, then start subagent-driven execution.
 
 ### What's Next
 
-1. Select the execution workflow requested by the user.
-2. Begin `feat-001` only through that workflow.
-3. Preserve one-feature-at-a-time Harness status throughout execution.
+1. Commit the new repository rules.
+2. Invoke the subagent-driven execution workflow.
+3. Begin `feat-001` and preserve one-feature-at-a-time Harness status.
 
 ## Blockers / Risks
 
@@ -42,6 +43,7 @@
 - Preserve unknown input fields and deterministic input ordering during export.
 - Use fixed core annotation fields plus task-configurable risk enums and extensions.
 - Apply Rex-HH/uber_go_guide_cn through executable rules in `AGENTS.md`.
+- Treat unnecessary code and abstractions as debt; keep the first release minimal and require concise Chinese Go comments.
 
 ## Files Modified This Session
 

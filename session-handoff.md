@@ -3,8 +3,8 @@
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: Persisted Chinese design approved; implementation plan complete and awaiting execution workflow selection.
-- Branch / commit: Repository initialization and design commit pending.
+- Current status: Persisted Chinese design and implementation plan approved; subagent-driven execution selected.
+- Branch / commit: `main`; rule update pending commit.
 
 ## Completed This Session
 
@@ -16,6 +16,7 @@
 - [x] Converted the complete design specification to Chinese.
 - [x] Received user approval for the persisted Chinese design.
 - [x] Wrote and self-reviewed the seven-task implementation plan.
+- [x] Added mandatory minimal-code and Chinese-comment rules before implementation.
 
 ## Verification Evidence
 
@@ -42,6 +43,7 @@
 - Unknown source fields are preserved.
 - Structured result validation is local and strict.
 - Account concurrency is configurable up to 500, with shared rate-limit cooldown.
+- The first release must use the smallest readable implementation; all necessary Go comments are concise and written in Chinese.
 
 ## Blockers / Risks
 
@@ -57,4 +59,4 @@
 
 ## Recommended Next Step
 
-- Ask the user to choose subagent-driven or inline execution, then begin `feat-001` using the required execution skill.
+- The user selected subagent-driven execution. Begin `feat-001` using the required execution skill after committing the new repository rules.

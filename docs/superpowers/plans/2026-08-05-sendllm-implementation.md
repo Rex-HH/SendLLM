@@ -18,6 +18,8 @@
 - API Key 只从配置指定的环境变量读取；日志、测试夹具和 Git 文件不得包含真实数据、完整模型回复或凭证。
 - 同一份 `output.schema_file` 同时供模型 `json_schema` 模式和本地 Schema 校验使用。
 - 所有 Go 代码遵循 `AGENTS.md` 中提炼的 Rex-HH/uber_go_guide_cn 规则。
+- 代码首先服务于阅读和维护：使用当前需求所需的最少代码、最直接控制流和最少抽象，不创建未来功能框架，不添加重复或推测性校验。
+- 所有新增 Go 注释使用规范中文；只注释导出契约、原因、不变量和并发所有权，不逐行复述代码。
 - 每个任务采用测试先行；任务结束时更新 `feature_list.json`、`progress.md`、`session-handoff.md`，并提交独立 commit。
 - 每次声称完成前运行任务的窄测试；最终必须通过 `./init.sh`。
 

@@ -49,6 +49,21 @@ The governing style reference is [Rex-HH/uber_go_guide_cn](https://github.com/Re
 
 Local conventions and the approved design take precedence where the external guide offers alternatives. In particular, internal constructors use typed `Config` structs; functional options are reserved for genuinely extensible public APIs.
 
+## Simplicity And Chinese Comments
+
+以下规则是强制要求，优先级高于个人编码偏好：
+
+- 代码首先是给人阅读的。优先选择最直接、最短且容易验证的实现，不为了展示技巧使用复杂控制流、反射、泛型框架或隐式魔法。
+- 本次只交付最简可用版本。只实现设计文档明确要求的当前行为，不预先建设插件系统、通用框架、自适应策略、热更新或假设中的未来扩展。
+- 代码量本身是维护负债。新增类型、接口、包或辅助层之前，必须证明它解决了当前真实边界、必要测试替换或明显重复；否则不要增加。
+- 校验只覆盖外部输入、持久化状态和已确认业务不变量。不得增加多层重复校验、推测性规则或没有调用方处理方式的错误分类。
+- 使用小函数、清晰命名、早返回和线性 happy path。能用标准库和普通数据结构清楚完成时，不引入新的依赖或设计模式。
+- 任何会明显增加代码量或理解成本的方案，如果不是已批准设计的硬性要求，必须先向用户说明收益并获得确认。
+- 所有新增 Go 代码注释必须使用中文，技术标识符可以保留英文。
+- 导出标识符和包注释遵循 Go doc 格式，例如 `// Runner 负责...`、`// Package configs 提供...`，注释以被说明的名称开头。
+- 注释应简洁说明“为什么”、契约、不变量、并发所有权或容易误解的边界；不要逐行翻译代码，不要用大量注释补偿复杂实现。
+- 不添加记录开发过程、Agent 行为或临时思考的注释。代码本身应通过命名和结构表达大部分意图。
+
 ## Working Rules
 
 - Work on one feature at a time, respecting dependencies in `feature_list.json`.
@@ -73,6 +88,8 @@ It checks formatting, unit/integration tests, the race detector, and `go vet` af
 A feature is complete only when:
 
 - Its behavior and failure cases match the approved design.
+- The implementation is the smallest clear solution for the current feature and contains no speculative abstraction or duplicate validation.
+- All added Go comments are necessary, clear, Go doc compliant where applicable, and written in Chinese.
 - Relevant tests exist and pass.
 - `./init.sh` passes from the repository root.
 - No sensitive payload or credential appears in logs, fixtures, or Git changes.
