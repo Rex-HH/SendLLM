@@ -3,12 +3,13 @@
 ## Current State
 
 **Last Updated:** 2026-08-05
-**Active Feature:** None; `feat-003` completed
+**Active Feature:** `feat-004` in progress (limiter and retry-policy foundation)
 
 ## Status
 
 ### What's Done
 
+- [x] Completed the `feat-004` foundation: conservative token estimation, bounded concurrency/RPM/TPM limiter, shared 429 cooldown, and classified exponential retry decisions. The runner remains unimplemented.
 - [x] Confirmed local single-process CLI scope.
 - [x] Confirmed JSONL input and output, SQLite recovery, OpenAI-compatible API, and configurable prompts/model parameters.
 - [x] Confirmed input fields: required `trace_id`, at least one non-empty `prompt` or optional `response`, with unknown fields preserved.
@@ -25,7 +26,7 @@
 
 ### What's Next
 
-1. Begin `feat-004`: concurrent runner and retry policy.
+1. Implement the bounded `feat-004` runner using the verified limiter and retry-policy foundation.
 2. Consume `service.Completer` and `service.Validator` without altering completed import invariants.
 3. Preserve source order and durable task identity while adding retry scheduling.
 
@@ -49,6 +50,9 @@
 
 ## Files Modified This Session
 
+- `internal/lib/tokenizer/` - Conservative provider-neutral token estimation and tests.
+- `internal/lib/limiter/` - Concurrency, RPM, TPM, shared cooldown, and release-safety limits with race coverage.
+- `internal/service/retry.go`, `internal/service/retry_test.go` - Retry backoff and provider-failure classification.
 - `AGENTS.md` - Repository workflow, scope, safety, and Go coding rules.
 - `feature_list.json` - Ordered implementation features and dependencies.
 - `progress.md` - Current durable project state.
@@ -63,6 +67,7 @@
 
 ## Evidence Of Completion
 
+- [x] Task 4 foundation verification: `go test ./internal/lib/tokenizer ./internal/lib/limiter ./internal/service -run 'Test(Estimate|Limiter|RetryPolicy|ClassifyFailure)'`, `go test -race ./internal/lib/limiter`, and `./init.sh` all passed.
 - [x] Harness validation: `100/100`, all five subsystems scored `5/5`.
 - [x] Design specification reviewed and approved by user.
 - [x] Plan self-review: all design sections mapped, no placeholders found, cross-task interfaces aligned.
@@ -72,4 +77,4 @@
 
 ## Notes For Next Session
 
-Start with `feat-002` only.
+Continue `feat-004` from the bounded runner only; token estimation, limiter, and retry policy are already verified.

@@ -29,8 +29,8 @@
       "name": "Concurrent runner and retry policy",
       "description": "Add the bounded worker pool, concurrency/RPM/TPM limits, shared 429 cooldown, classified retries, format repair, graceful shutdown, and durable retry scheduling.",
       "dependencies": ["feat-002", "feat-003"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "in-progress",
+      "evidence": "2026-08-05: Token 估算、并发/RPM/TPM 限速、共享冷却和重试分类基础完成；`go test ./internal/lib/tokenizer ./internal/lib/limiter ./internal/service -run 'Test(Estimate|Limiter|RetryPolicy|ClassifyFailure)'`、`go test -race ./internal/lib/limiter` 与 `./init.sh` 均通过。Runner 尚未完成，因此保持 in-progress。"
     },
     {
       "id": "feat-005",

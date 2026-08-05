@@ -2,12 +2,12 @@
 
 ## Active Work
 
-`feat-003` is complete. The next unblocked feature is `feat-004`, which should consume the existing `service.Completer` and `service.Validator` boundaries without changing import or validation contracts.
+`feat-004` remains in progress. Its token-estimation, limiter, and retry-policy foundation is complete and verified; the bounded runner remains for the next task.
 
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: `feat-001` through `feat-003` are complete; `feat-004` is next.
+- Current status: `feat-001` through `feat-003` are complete; the `feat-004` foundation is complete and the runner remains in progress.
 - Branch / commit: `feature/sendllm-implementation`; base setup commit `7259b09`.
 
 ## Completed This Session
@@ -32,6 +32,7 @@
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
+| Task 4 foundation | `go test ./internal/lib/tokenizer ./internal/lib/limiter ./internal/service -run 'Test(Estimate|Limiter|RetryPolicy|ClassifyFailure)'`; `go test -race ./internal/lib/limiter`; `./init.sh` | pass | Covers conservative token estimates, bounded concurrency, disabled rates, token budget rejection, cooldown, idempotent release, failure classes, backoff, full race tests, and vet. |
 | Harness validation | `validate-harness.mjs --target .` | pass | 100/100; all subsystems 5/5. |
 | Config and DTO tests | `go test ./internal/lib/configs ./internal/dto` | pass | Covers strict loading, defaults, source normalization, and annotation contracts. |
 | Go verification | `./init.sh` | pass | Formatting, unit tests, race tests, and vet all passed. |
@@ -43,6 +44,9 @@
 
 ## Files Changed
 
+- `internal/lib/tokenizer/estimate.go` and `estimate_test.go`
+- `internal/lib/limiter/limiter.go` and `limiter_test.go`
+- `internal/service/retry.go` and `retry_test.go`
 - `AGENTS.md`
 - `feature_list.json`
 - `progress.md`
@@ -87,4 +91,4 @@
 
 ## Recommended Next Step
 
-- Implement `feat-004` bounded concurrent runner and retry policy, consuming the persisted pending items from `feat-002` and the Task 3 completer and validator boundaries.
+- Implement the remaining `feat-004` bounded concurrent runner using the verified limiter/retry-policy foundation.
