@@ -5,8 +5,8 @@
       "name": "Project bootstrap and configuration",
       "description": "Initialize the Go module, CLI entrypoint, typed YAML configuration, prompt/risk taxonomy loading, validation, and example configuration.",
       "dependencies": [],
-      "status": "in-progress",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-05: gofmt -w internal/lib/configs internal/dto; go test ./internal/lib/configs ./internal/dto; go vet ./internal/lib/configs ./internal/dto; ./init.sh all passed, including -race."
     },
     {
       "id": "feat-002",

@@ -1,0 +1,40 @@
+task:
+  id: masb-2026-08
+  input: ../data/input.jsonl
+  output: ../data/output.jsonl
+  state: ../data/masb-2026-08.db
+
+model:
+  base_url: https://aigateway.venusgroup.com.cn/ai/deepseek/openai
+  api_key_env: AI_GATEWAY_API_KEY
+  name: deepseek-v4-pro
+  structured_output: json_schema
+  temperature: 0
+  top_p: 1
+  max_tokens: 500
+  seed: 42
+  timeout: 60s
+  extra_body:
+    frequency_penalty: 0
+
+prompt:
+  system_file: ../prompts/masb-system.txt
+  scene: auto
+  risk_types_file: risk-types.yaml
+
+runtime:
+  concurrency: 64
+  requests_per_minute: 0
+  tokens_per_minute: 0
+  shutdown_timeout: 30s
+
+retry:
+  request_max_attempts: 5
+  format_repair_attempts: 2
+  initial_backoff: 1s
+  max_backoff: 60s
+
+output:
+  schema_file: result-schema.json
+  explanation_min_length: 10
+  explanation_max_length: 70
