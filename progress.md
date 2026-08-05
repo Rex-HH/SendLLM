@@ -14,6 +14,7 @@
 - [x] Confirmed input fields: required `trace_id`, at least one non-empty `prompt` or optional `response`, with unknown fields preserved.
 - [x] Confirmed concurrency, rate limiting, retry, structured validation, export, package layout, and test strategy.
 - [x] Created the repository harness and concrete feature dependency list.
+- [x] Translated the complete persisted design specification into Chinese while preserving technical identifiers.
 
 ### What's In Progress
 

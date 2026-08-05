@@ -13,6 +13,7 @@
 - [x] Designed concurrency, retry, validation, and export behavior.
 - [x] Created a minimal agent harness with concrete feature dependencies.
 - [x] Added Uber Go guide requirements to `AGENTS.md`.
+- [x] Converted the complete design specification to Chinese.
 
 ## Verification Evidence
 
