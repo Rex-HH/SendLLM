@@ -60,7 +60,6 @@
 ## Blockers / Risks
 
 - Actual provider RPM/TPM and structured-output capability require task configuration.
-- `modernc.org/sqlite v1.34.5` is declared for the next feature, but the configured module proxy left a cache lock and did not add its `go.sum` line. Resolve this before importing the driver.
 
 ## Next Session Startup
 
@@ -72,4 +71,4 @@
 
 ## Recommended Next Step
 
-- Resolve the SQLite module download lock if it persists, then implement `feat-002` JSONL import and SQLite state.
+- Implement `feat-002` JSONL import and SQLite state; `modernc.org/sqlite v1.34.5` checksums are now verified in `go.sum`.

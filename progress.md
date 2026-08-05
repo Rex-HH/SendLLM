@@ -32,7 +32,6 @@
 - [ ] The account concurrency limit is reported as approximately 500, but RPM and TPM are not yet known; runtime configuration must remain conservative and observable.
 - [ ] OpenAI-compatible providers differ in JSON Schema and rate-limit-header support; capability mode must be explicit in configuration.
 - [ ] The real gateway may differ in `json_schema` support; Task 7 must test it and use the approved `json_object` fallback only with captured incompatibility evidence.
-- [ ] The configured `modernc.org/sqlite v1.34.5` download is cached with an unresolved proxy lock and no `go.sum` entry; `feat-002` must resolve it before importing the driver.
 
 ## Decisions Made
 
@@ -66,7 +65,8 @@
 - [x] Design specification reviewed and approved by user.
 - [x] Plan self-review: all design sections mapped, no placeholders found, cross-task interfaces aligned.
 - [x] Task 1 verification: `./init.sh` passed formatting, unit tests, race tests, and vet.
+- [x] Review fix: Go officially downloaded and verified `modernc.org/sqlite v1.34.5`; `go.sum` now includes module and go.mod checksums.
 
 ## Notes For Next Session
 
-Start with `feat-002` only. Resolve the SQLite module proxy lock before adding the driver import.
+Start with `feat-002` only.
