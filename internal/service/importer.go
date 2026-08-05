@@ -29,11 +29,14 @@ func Import(ctx context.Context, store *dao.Store, taskID string, reader io.Read
 
 	var stats ImportStats
 	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), maxJSONLLineSize)
+	scanner.Buffer(make([]byte, 64*1024), maxJSONLLineSize+1)
 	var inputIndex int64
 	for scanner.Scan() {
 		inputIndex++
 		raw := append([]byte(nil), scanner.Bytes()...)
+		if len(raw) > maxJSONLLineSize {
+			return ImportStats{}, fmt.Errorf("read line %d: JSONL line exceeds %d bytes", inputIndex, maxJSONLLineSize)
+		}
 		sample, err := dto.ParseSource(raw)
 		if err != nil {
 			return ImportStats{}, fmt.Errorf("parse line %d: %w", inputIndex, err)

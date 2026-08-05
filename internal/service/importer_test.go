@@ -69,13 +69,41 @@ func TestImportRejectsInvalidLines(t *testing.T) {
 	}
 }
 
-func TestImportRejectsLineLargerThan16MiB(t *testing.T) {
+func TestImportAcceptsLineAt16MiB(t *testing.T) {
+	const exactLineSize = 16 * 1024 * 1024
+	const prefix = `{"trace_id":"id-1","prompt":"`
+	const suffix = `"}`
+	line := prefix + strings.Repeat("x", exactLineSize-len(prefix)-len(suffix)) + suffix
+	if len(line) != exactLineSize {
+		t.Fatalf("line length = %d, want %d", len(line), exactLineSize)
+	}
+
 	store := openTestStore(t)
 	ctx := context.Background()
 	ensureTask(t, store, ctx)
-	input := strings.NewReader(`{"trace_id":"id-1","prompt":"` + strings.Repeat("x", 16<<20) + `"}`)
+	stats, err := service.Import(ctx, store, "task-1", strings.NewReader(line+"\n"))
+	if err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+	if stats.Added != 1 || stats.Skipped != 0 {
+		t.Fatalf("Import() = %+v, want Added=1 Skipped=0", stats)
+	}
+}
 
-	_, err := service.Import(ctx, store, "task-1", input)
+func TestImportRejectsLineLargerThan16MiB(t *testing.T) {
+	const largestValidLineSize = 16 * 1024 * 1024
+	const prefix = `{"trace_id":"id-1","prompt":"`
+	const suffix = `"}`
+	line := prefix + strings.Repeat("x", largestValidLineSize+1-len(prefix)-len(suffix)) + suffix
+	if len(line) != largestValidLineSize+1 {
+		t.Fatalf("line length = %d, want %d", len(line), largestValidLineSize+1)
+	}
+
+	store := openTestStore(t)
+	ctx := context.Background()
+	ensureTask(t, store, ctx)
+
+	_, err := service.Import(ctx, store, "task-1", strings.NewReader(line+"\n"))
 	if err == nil {
 		t.Fatal("Import() error = nil, want oversized line error")
 	}
