@@ -136,6 +136,7 @@ func newRunnerInternal(t *testing.T, store *dao.Store, completer Completer) *Run
 		MaxOutputTokens:      100,
 		RequestMaxAttempts:   1,
 		FormatRepairAttempts: 0,
+		ShutdownTimeout:      50 * time.Millisecond,
 		Store:                store,
 		Completer:            completer,
 		Validator:            validator,

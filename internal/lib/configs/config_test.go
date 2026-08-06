@@ -25,6 +25,8 @@ func TestLoad(t *testing.T) {
 		{name: "rejects missing risk placeholder", yaml: validYAML("system_file: missing-risk.txt"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects duplicate schema placeholder", yaml: validYAML("system_file: duplicate-schema.txt"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects managed extra body key", yaml: validYAML("extra_body:\n    model: managed-elsewhere"), wantErr: configs.ErrInvalidConfig},
+		{name: "rejects zero max tokens", yaml: validYAML("max_tokens: 0"), wantErr: configs.ErrInvalidConfig},
+		{name: "rejects negative max tokens", yaml: validYAML("max_tokens: -1"), wantErr: configs.ErrInvalidConfig},
 	}
 
 	for _, tt := range tests {
@@ -126,6 +128,16 @@ func TestExampleConfig(t *testing.T) {
 	if got.Model.Name != "deepseek-v4-pro" || got.Model.APIKeyEnv != "AI_GATEWAY_API_KEY" {
 		t.Errorf("model identity = %q/%q", got.Model.Name, got.Model.APIKeyEnv)
 	}
+	if got.Model.StructuredOutput != "json_object" || got.Model.MaxTokens != 2000 {
+		t.Errorf(
+			"model recommendation = %q/%d, want json_object/2000",
+			got.Model.StructuredOutput,
+			got.Model.MaxTokens,
+		)
+	}
+	if got.Runtime.Concurrency != 4 {
+		t.Errorf("runtime concurrency = %d, want 4", got.Runtime.Concurrency)
+	}
 }
 
 func writeConfig(t *testing.T, contents string) string {
@@ -159,6 +171,7 @@ model:
   api_key_env: SENDLLM_TEST_KEY
   name: test-model
   structured_output: json_schema
+  max_tokens: 100
 prompt:
   system_file: system.txt
   scene: auto
@@ -170,6 +183,9 @@ output:
 `
 	if replacement == "" {
 		return base
+	}
+	if strings.HasPrefix(replacement, "max_tokens") {
+		return strings.Replace(base, "max_tokens: 100", replacement, 1)
 	}
 
 	parts := strings.SplitN(replacement, ":", 2)

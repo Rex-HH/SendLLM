@@ -31,4 +31,13 @@ func TestAnnotationPreservesExtendedInfoFields(t *testing.T) {
 	if !json.Valid(encoded) || string(encoded) == "" {
 		t.Errorf("Marshal() = %s, want valid JSON", encoded)
 	}
+	var roundTrip struct {
+		ExtendedInfo map[string]json.RawMessage `json:"extended_info"`
+	}
+	if err := json.Unmarshal(encoded, &roundTrip); err != nil {
+		t.Fatalf("Unmarshal(round trip) error = %v", err)
+	}
+	if got := string(roundTrip.ExtendedInfo["custom_reason"]); got != `"example"` {
+		t.Errorf("round-trip custom_reason = %s, want example", got)
+	}
 }

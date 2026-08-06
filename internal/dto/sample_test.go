@@ -1,6 +1,7 @@
 package dto_test
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -76,5 +77,25 @@ func TestSourceSampleModelInput(t *testing.T) {
 				t.Errorf("ModelInput().Scene = %q, want %q", got.Scene, tt.wantScene)
 			}
 		})
+	}
+}
+
+func TestSourceSampleMarshalPreservesUnknownFields(t *testing.T) {
+	sample, err := dto.ParseSource(
+		[]byte(`{"trace_id":"id-1","prompt":"hello","metadata":{"sequence":9007199254740993}}`),
+	)
+	if err != nil {
+		t.Fatalf("ParseSource() error = %v", err)
+	}
+	encoded, err := json.Marshal(sample)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatalf("Unmarshal(round trip) error = %v", err)
+	}
+	if got := string(fields["metadata"]); got != `{"sequence":9007199254740993}` {
+		t.Errorf("metadata = %s, want preserved unknown field", got)
 	}
 }

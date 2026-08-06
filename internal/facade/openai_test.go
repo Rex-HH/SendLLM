@@ -13,6 +13,7 @@ import (
 
 	"sendllm/internal/dto"
 	"sendllm/internal/facade"
+	"sendllm/internal/service"
 )
 
 const responseSchema = `{"type":"object","properties":{"label":{"type":"string"}}}`
@@ -86,6 +87,24 @@ func TestOpenAI_CompleteSendsConfiguredResponseFormat(t *testing.T) {
 			}
 			if got.Usage.TotalTokens != 12 {
 				t.Errorf("Usage.TotalTokens = %d, want 12", got.Usage.TotalTokens)
+			}
+		})
+	}
+}
+
+func TestNewOpenAIRejectsNonPositiveMaxTokens(t *testing.T) {
+	for _, maxTokens := range []int{0, -1} {
+		t.Run(fmt.Sprintf("max tokens %d", maxTokens), func(t *testing.T) {
+			_, err := facade.NewOpenAI(facade.Config{
+				BaseURL:        "https://example.test/v1",
+				APIKey:         "test-key",
+				Model:          "test-model",
+				MaxTokens:      maxTokens,
+				Timeout:        time.Second,
+				MaxConnections: 1,
+			})
+			if err == nil {
+				t.Fatalf("NewOpenAI(MaxTokens=%d) error = nil, want error", maxTokens)
 			}
 		})
 	}
@@ -238,6 +257,93 @@ func TestOpenAI_CompletePreservesAuditableFailureResponse(t *testing.T) {
 	}
 }
 
+func TestOpenAI_CompletePreservesStatusWhenErrorBodyReadFails(t *testing.T) {
+	tests := []struct {
+		name           string
+		statusCode     int
+		kind           dto.ProviderErrorKind
+		interrupt      bool
+		wantRetry      bool
+		wantCooldown   bool
+		wantPrefixSize int
+	}{
+		{
+			name:           "oversized rate limit",
+			statusCode:     http.StatusTooManyRequests,
+			kind:           dto.ProviderRateLimited,
+			wantRetry:      true,
+			wantCooldown:   true,
+			wantPrefixSize: 4 * 1024 * 1024,
+		},
+		{
+			name:           "interrupted authentication",
+			statusCode:     http.StatusUnauthorized,
+			kind:           dto.ProviderAuthentication,
+			interrupt:      true,
+			wantPrefixSize: len("synthetic-audit-prefix"),
+		},
+		{
+			name:           "oversized server failure",
+			statusCode:     http.StatusInternalServerError,
+			kind:           dto.ProviderServer,
+			wantRetry:      true,
+			wantPrefixSize: 4 * 1024 * 1024,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if test.interrupt {
+					connection, buffered, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Errorf("Hijack() error = %v", err)
+						return
+					}
+					defer connection.Close()
+					_, _ = fmt.Fprintf(
+						buffered,
+						"HTTP/1.1 %d %s\r\nContent-Length: 128\r\nConnection: close\r\n\r\nsynthetic-audit-prefix",
+						test.statusCode,
+						http.StatusText(test.statusCode),
+					)
+					_ = buffered.Flush()
+					return
+				}
+				if test.statusCode == http.StatusTooManyRequests {
+					w.Header().Set("Retry-After", "2")
+				}
+				w.WriteHeader(test.statusCode)
+				_, _ = fmt.Fprint(w, strings.Repeat("x", 4*1024*1024+1))
+			}))
+			defer server.Close()
+
+			client := newTestClient(t, server.URL)
+			response, err := client.Complete(context.Background(), completionRequest("json_schema"))
+			var providerErr *dto.ProviderError
+			if !errors.As(err, &providerErr) || providerErr.Kind != test.kind || providerErr.StatusCode != test.statusCode {
+				t.Fatalf("Complete() error = %v, want %s ProviderError with status %d", err, test.kind, test.statusCode)
+			}
+			if providerErr.Err == nil {
+				t.Error("ProviderError.Err = nil, want bounded body read error")
+			}
+			decision := service.ClassifyFailure(err)
+			if decision.Retry != test.wantRetry || decision.GlobalCooldown != test.wantCooldown {
+				t.Errorf("ClassifyFailure() = %+v, want retry=%v cooldown=%v", decision, test.wantRetry, test.wantCooldown)
+			}
+			if len(response.RawResponse) != test.wantPrefixSize {
+				t.Errorf("RawResponse length = %d, want %d", len(response.RawResponse), test.wantPrefixSize)
+			}
+			if len(response.RawResponse) > 4*1024*1024 {
+				t.Errorf("RawResponse length = %d, want at most 4 MiB", len(response.RawResponse))
+			}
+			if strings.Contains(err.Error(), "synthetic-audit-prefix") {
+				t.Error("public error contains provider response payload")
+			}
+		})
+	}
+}
+
 func TestOpenAI_CompleteRejectsOversizedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprint(w, strings.Repeat("x", 4*1024*1024+1))
@@ -272,6 +378,7 @@ func newTestClient(t *testing.T, baseURL string) *facade.OpenAI {
 		BaseURL:        baseURL,
 		APIKey:         "test-key",
 		Model:          "test-model",
+		MaxTokens:      100,
 		Timeout:        time.Second,
 		MaxConnections: 2,
 	})

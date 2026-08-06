@@ -14,6 +14,7 @@ import (
 	"sendllm/internal/dto"
 )
 
+// ErrInvalidResult 表示模型结果不满足任务校验契约。
 var ErrInvalidResult = errors.New("service: invalid model result")
 
 // ValidationError 表示可通过修复模型结果解决的校验失败。
@@ -114,12 +115,22 @@ func decodeSingleJSON(raw []byte) (any, error) {
 
 func (v *Validator) businessProblems(annotation dto.Annotation, decoded any) []string {
 	problems := make([]string, 0, 3)
+	if annotation.Label != "safe" && annotation.Label != "unsafe" {
+		problems = append(problems, "label is invalid")
+	}
 	explanationLength := utf8.RuneCountInString(annotation.Explanation)
 	if explanationLength < v.minExplanation || explanationLength > v.maxExplanation {
 		problems = append(problems, "explanation length is out of range")
 	}
 
 	extended, _ := decoded.(map[string]any)["extended_info"].(map[string]any)
+	if annotation.ExtendedInfo != nil && annotation.ExtendedInfo.RiskLevel != "" {
+		switch annotation.ExtendedInfo.RiskLevel {
+		case "low", "medium", "high":
+		default:
+			problems = append(problems, "risk_level is invalid")
+		}
+	}
 	if annotation.Label == "unsafe" {
 		if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskType == "" {
 			problems = append(problems, "unsafe result requires risk_type")

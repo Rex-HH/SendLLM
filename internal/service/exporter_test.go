@@ -249,10 +249,10 @@ func TestExportAtomicallyReplacesOrPreservesExistingFiles(t *testing.T) {
 		if len(backupDirs) != 1 {
 			t.Fatalf("export backup directories = %v, want one", backupDirs)
 		}
-		if got := readFile(t, filepath.Join(backupDirs[0], "succeeded")); got != "old success\n" {
+		if got := readFile(t, filepath.Join(backupDirs[0], "succeeded.jsonl")); got != "old success\n" {
 			t.Errorf("success backup = %q, want old content", got)
 		}
-		if _, err := os.Lstat(filepath.Join(backupDirs[0], "failed")); !errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Lstat(filepath.Join(backupDirs[0], "failed.jsonl")); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("Lstat(failed backup) error = %v, want old failure only at formal path", err)
 		}
 	})
@@ -368,7 +368,7 @@ func TestExportAtomicallyReplacesOrPreservesExistingFiles(t *testing.T) {
 				return os.Rename(oldPath, newPath)
 			},
 			RemoveAll: func(backupDir string) error {
-				if err := os.Remove(filepath.Join(backupDir, "succeeded")); err != nil {
+				if err := os.Remove(filepath.Join(backupDir, "succeeded.jsonl")); err != nil {
 					t.Fatalf("remove first backup: %v", err)
 				}
 				return cleanupErr

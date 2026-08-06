@@ -7,6 +7,8 @@
 !**/testdata/*.jsonl
 !**/testdata/**/*.jsonl
 data/
+.sendllm-export-[0-9]*
+.sendllm-export-backup-[0-9]*
 
 # SQLite state and journals
 *.db

@@ -127,13 +127,13 @@ func publishExportFiles(
 			name:       "succeeded",
 			tempPath:   successTemp,
 			targetPath: outputPath,
-			backupPath: filepath.Join(backupDir, "succeeded"),
+			backupPath: filepath.Join(backupDir, "succeeded.jsonl"),
 		},
 		{
 			name:       "failed",
 			tempPath:   failedTemp,
 			targetPath: failedPath,
-			backupPath: filepath.Join(backupDir, "failed"),
+			backupPath: filepath.Join(backupDir, "failed.jsonl"),
 		},
 	}
 
@@ -280,7 +280,7 @@ func mergeExportRecord(record dao.ExportRecord) (map[string]json.RawMessage, err
 }
 
 func stageJSONL(targetPath string, write func(*json.Encoder) error) (string, error) {
-	temporary, err := os.CreateTemp(filepath.Dir(targetPath), ".sendllm-export-*")
+	temporary, err := os.CreateTemp(filepath.Dir(targetPath), ".sendllm-export-*.jsonl")
 	if err != nil {
 		return "", fmt.Errorf("create temporary file: %w", err)
 	}

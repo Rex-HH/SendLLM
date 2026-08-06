@@ -1,13 +1,15 @@
 package dao
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"time"
+	"io"
 )
 
 // Import 表示一批原子写入的样本导入事务。
@@ -50,7 +52,7 @@ func (i *Import) Add(ctx context.Context, item Item) (ImportDisposition, error) 
 
 	var nextAttemptAt any
 	if !item.NextAttemptAt.IsZero() {
-		nextAttemptAt = item.NextAttemptAt.UTC().Format(time.RFC3339Nano)
+		nextAttemptAt = formatNextAttemptAt(item.NextAttemptAt)
 	}
 	if _, err := i.tx.ExecContext(
 		ctx,
@@ -103,8 +105,13 @@ func (i *Import) Rollback() error {
 
 func normalizedSourceHash(raw []byte) (string, error) {
 	var source any
-	if err := json.Unmarshal(raw, &source); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&source); err != nil {
 		return "", fmt.Errorf("decode JSON: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("decode JSON: multiple values")
 	}
 	normalized, err := json.Marshal(source)
 	if err != nil {

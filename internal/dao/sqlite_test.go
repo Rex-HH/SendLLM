@@ -85,6 +85,33 @@ func TestImport_AddConflictRollsBackBatch(t *testing.T) {
 	}
 }
 
+func TestImport_AddDetectsConflictBetweenAdjacentLargeIntegers(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	ensureTask(t, store, ctx)
+
+	first := beginImport(t, store, ctx)
+	if _, err := first.Add(
+		ctx,
+		sourceItem("large-integer", 1, `{"trace_id":"large-integer","prompt":"test","sequence":9007199254740992}`),
+	); err != nil {
+		t.Fatalf("Add(first) error = %v", err)
+	}
+	if err := first.Commit(); err != nil {
+		t.Fatalf("Commit(first) error = %v", err)
+	}
+
+	second := beginImport(t, store, ctx)
+	defer func() { _ = second.Rollback() }()
+	_, err := second.Add(
+		ctx,
+		sourceItem("large-integer", 1, `{"trace_id":"large-integer","prompt":"test","sequence":9007199254740993}`),
+	)
+	if !errors.Is(err, dao.ErrTraceConflict) {
+		t.Fatalf("Add(conflicting large integer) error = %v, want %v", err, dao.ErrTraceConflict)
+	}
+}
+
 func openTestStore(t *testing.T) *dao.Store {
 	t.Helper()
 	store, err := dao.Open(context.Background(), filepath.Join(t.TempDir(), "state.db"))

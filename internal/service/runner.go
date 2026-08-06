@@ -27,6 +27,7 @@ type RunnerConfig struct {
 	MaxOutputTokens      int
 	RequestMaxAttempts   int
 	FormatRepairAttempts int
+	ShutdownTimeout      time.Duration
 	Store                *dao.Store
 	Completer            Completer
 	Validator            *Validator
@@ -78,7 +79,7 @@ func NewRunner(cfg RunnerConfig) (*Runner, error) {
 	default:
 		return nil, errors.New("runner completion mode is invalid")
 	}
-	if cfg.MaxOutputTokens < 1 || cfg.RequestMaxAttempts < 1 || cfg.FormatRepairAttempts < 0 {
+	if cfg.MaxOutputTokens < 1 || cfg.RequestMaxAttempts < 1 || cfg.FormatRepairAttempts < 0 || cfg.ShutdownTimeout <= 0 {
 		return nil, errors.New("runner attempt and token limits are invalid")
 	}
 	if cfg.Jitter == nil {
@@ -102,7 +103,12 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 		return Summary{}, err
 	}
 	tracker := newProgressTracker(time.Now(), initialCounts)
-	runCtx, cancel := context.WithCancelCause(ctx)
+	claimCtx, cancelClaim := context.WithCancelCause(ctx)
+	workCtx, cancelWork := context.WithCancelCause(context.WithoutCancel(ctx))
+	cancelTask := func(cause error) {
+		cancelClaim(cause)
+		cancelWork(cause)
+	}
 	jobs := make(chan dao.Item)
 	results := make(chan workerResult)
 	var workers sync.WaitGroup
@@ -111,31 +117,75 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 	for range workerCount {
 		go func() {
 			defer workers.Done()
-			r.worker(runCtx, cancel, jobs, results)
+			r.worker(workCtx, cancelTask, jobs, results)
 		}()
 	}
-	shutdown := func() {
-		cancel(nil)
+	active := 0
+	jobsClosed := false
+	closeJobs := func() {
+		if jobsClosed {
+			return
+		}
 		close(jobs)
+		jobsClosed = true
+	}
+	abortWorkers := func(cause error) {
+		cancelTask(cause)
+		closeJobs()
 		workers.Wait()
 	}
-	defer cancel(nil)
+	finishWorkers := func() {
+		closeJobs()
+		workers.Wait()
+		cancelWork(nil)
+	}
+	drainWorkers := func(cause error) error {
+		closeJobs()
+		timer := time.NewTimer(r.cfg.ShutdownTimeout)
+		defer timer.Stop()
+		for active > 0 {
+			select {
+			case <-workCtx.Done():
+				workers.Wait()
+				return context.Cause(workCtx)
+			case <-timer.C:
+				cancelWork(cause)
+				workers.Wait()
+				return cause
+			case <-results:
+				active--
+			}
+		}
+		finishWorkers()
+		return cause
+	}
+	defer cancelWork(nil)
+	defer cancelClaim(nil)
 
-	active := 0
 	for {
-		if err := runCtx.Err(); err != nil {
-			shutdown()
-			return Summary{}, context.Cause(runCtx)
+		if cause := context.Cause(ctx); cause != nil {
+			return Summary{}, drainWorkers(cause)
+		}
+		if cause := context.Cause(workCtx); cause != nil {
+			abortWorkers(cause)
+			return Summary{}, cause
 		}
 
 		capacity := workerCount - active
 		if capacity > 0 {
-			claimed, err := r.claim(runCtx, capacity, time.Now())
+			claimed, err := r.claim(claimCtx, capacity, time.Now())
 			if err != nil {
-				shutdown()
-				return Summary{}, err
+				if cause := context.Cause(ctx); cause != nil {
+					return Summary{}, drainWorkers(cause)
+				}
+				claimErr := runContextError(workCtx, err)
+				abortWorkers(claimErr)
+				return Summary{}, claimErr
 			}
 			for _, item := range claimed {
+				if cause := context.Cause(ctx); cause != nil {
+					return Summary{}, drainWorkers(cause)
+				}
 				sent := false
 				for !sent {
 					select {
@@ -145,17 +195,20 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 					case result := <-results:
 						active--
 						if result.err != nil {
-							resultErr := runContextError(runCtx, result.err)
-							shutdown()
+							resultErr := runContextError(workCtx, result.err)
+							abortWorkers(resultErr)
 							return Summary{}, resultErr
 						}
-						if err := r.reportProgress(runCtx, tracker); err != nil {
-							shutdown()
+						if err := r.reportProgress(claimCtx, tracker); err != nil {
+							abortWorkers(err)
 							return Summary{}, err
 						}
-					case <-runCtx.Done():
-						shutdown()
-						return Summary{}, context.Cause(runCtx)
+					case <-ctx.Done():
+						return Summary{}, drainWorkers(context.Cause(ctx))
+					case <-workCtx.Done():
+						cause := context.Cause(workCtx)
+						abortWorkers(cause)
+						return Summary{}, cause
 					}
 				}
 			}
@@ -169,36 +222,45 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 			case result := <-results:
 				active--
 				if result.err != nil {
-					resultErr := runContextError(runCtx, result.err)
-					shutdown()
+					resultErr := runContextError(workCtx, result.err)
+					abortWorkers(resultErr)
 					return Summary{}, resultErr
 				}
-				if err := r.reportProgress(runCtx, tracker); err != nil {
-					shutdown()
+				if err := r.reportProgress(claimCtx, tracker); err != nil {
+					abortWorkers(err)
 					return Summary{}, err
 				}
-			case <-runCtx.Done():
-				shutdown()
-				return Summary{}, context.Cause(runCtx)
+			case <-ctx.Done():
+				return Summary{}, drainWorkers(context.Cause(ctx))
+			case <-workCtx.Done():
+				cause := context.Cause(workCtx)
+				abortWorkers(cause)
+				return Summary{}, cause
 			}
 			continue
 		}
 
-		counts, err := r.store.Counts(runCtx, r.cfg.TaskID)
+		counts, err := r.store.Counts(claimCtx, r.cfg.TaskID)
 		if err != nil {
-			countsErr := runContextError(runCtx, err)
-			shutdown()
+			if cause := context.Cause(ctx); cause != nil {
+				return Summary{}, drainWorkers(cause)
+			}
+			countsErr := runContextError(workCtx, err)
+			abortWorkers(countsErr)
 			return Summary{}, countsErr
 		}
 		if counts.Pending == 0 && counts.Processing == 0 && counts.RetryWait == 0 {
-			shutdown()
+			finishWorkers()
 			summary := tracker.summary(time.Now(), counts)
 			r.cfg.OnProgress(summary)
 			return summary, nil
 		}
-		if err := r.waitForRetry(runCtx); err != nil {
-			retryErr := runContextError(runCtx, err)
-			shutdown()
+		if err := r.waitForRetry(claimCtx); err != nil {
+			if cause := context.Cause(ctx); cause != nil {
+				return Summary{}, drainWorkers(cause)
+			}
+			retryErr := runContextError(workCtx, err)
+			abortWorkers(retryErr)
 			return Summary{}, retryErr
 		}
 	}

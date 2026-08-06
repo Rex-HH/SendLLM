@@ -2,7 +2,9 @@ package dao_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -83,6 +85,104 @@ func TestStore_RetryAndFailureTransitions(t *testing.T) {
 	}
 	if counts.Failed != 1 || counts.Pending != 0 || counts.Processing != 0 || counts.RetryWait != 0 {
 		t.Fatalf("Counts() = %+v, want one failed", counts)
+	}
+}
+
+func TestStore_RetryTimesSortChronologicallyAcrossFractionWidth(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	ensureTask(t, store, ctx)
+	seedItems(t, store, ctx,
+		sourceItem("earlier", 1, `{"trace_id":"earlier","prompt":"test"}`),
+		sourceItem("later", 2, `{"trace_id":"later","prompt":"test"}`),
+	)
+
+	base := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	claimed, err := store.Claim(ctx, "task-1", 2, base)
+	if err != nil || len(claimed) != 2 {
+		t.Fatalf("Claim() = (%+v, %v), want two items", claimed, err)
+	}
+	attempt := dao.Attempt{
+		Phase:         "classification",
+		RequestNumber: 1,
+		StartedAt:     base,
+		FinishedAt:    base,
+		ErrorCategory: "server",
+		Retryable:     true,
+	}
+	earlier := base.Add(100 * time.Millisecond)
+	later := base.Add(110 * time.Millisecond)
+	if err := store.ScheduleRetry(ctx, "task-1", "earlier", attempt, earlier, "server", "safe summary"); err != nil {
+		t.Fatalf("ScheduleRetry(earlier) error = %v", err)
+	}
+	if err := store.ScheduleRetry(ctx, "task-1", "later", attempt, later, "server", "safe summary"); err != nil {
+		t.Fatalf("ScheduleRetry(later) error = %v", err)
+	}
+
+	gotNext, ok, err := store.NextRetryAt(ctx, "task-1")
+	if err != nil || !ok || !gotNext.Equal(earlier) {
+		t.Errorf("NextRetryAt() = (%v, %v, %v), want (%v, true, nil)", gotNext, ok, err, earlier)
+	}
+	claimed, err = store.Claim(ctx, "task-1", 2, base.Add(105*time.Millisecond))
+	if err != nil || len(claimed) != 1 || claimed[0].TraceID != "earlier" {
+		t.Errorf("Claim(between retry times) = (%+v, %v), want earlier item", claimed, err)
+	}
+}
+
+func TestStore_ClaimMigratesLegacyVariableWidthRetryTime(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, err := dao.Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open(first) error = %v", err)
+	}
+	ensureTask(t, store, ctx)
+	seedItems(t, store, ctx, sourceItem("legacy", 1, `{"trace_id":"legacy","prompt":"test"}`))
+
+	base := time.Date(2026, time.August, 6, 12, 0, 0, 0, time.UTC)
+	claimed, err := store.Claim(ctx, "task-1", 1, base)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("Claim() = (%+v, %v), want one item", claimed, err)
+	}
+	attempt := dao.Attempt{Phase: "classification", RequestNumber: 1, StartedAt: base, FinishedAt: base}
+	retryAt := base.Add(100 * time.Millisecond)
+	if err := store.ScheduleRetry(ctx, "task-1", "legacy", attempt, retryAt, "server", "safe summary"); err != nil {
+		t.Fatalf("ScheduleRetry() error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close(first) error = %v", err)
+	}
+
+	rawDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	if _, err := rawDB.ExecContext(
+		ctx,
+		"UPDATE items SET next_attempt_at = ? WHERE task_id = ? AND trace_id = ?",
+		retryAt.Format(time.RFC3339Nano),
+		"task-1",
+		"legacy",
+	); err != nil {
+		_ = rawDB.Close()
+		t.Fatalf("write legacy retry time error = %v", err)
+	}
+	if err := rawDB.Close(); err != nil {
+		t.Fatalf("Close(raw DB) error = %v", err)
+	}
+
+	store, err = dao.Open(ctx, path)
+	if err != nil {
+		t.Fatalf("Open(resume) error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close(resume) error = %v", err)
+		}
+	})
+	claimed, err = store.Claim(ctx, "task-1", 1, base.Add(105*time.Millisecond))
+	if err != nil || len(claimed) != 1 || claimed[0].TraceID != "legacy" {
+		t.Fatalf("Claim(resumed legacy retry) = (%+v, %v), want legacy item", claimed, err)
 	}
 }
 

@@ -76,3 +76,37 @@ func TestValidator_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestValidator_EnforcesCoreEnumsWithPermissiveSchema(t *testing.T) {
+	validator, err := service.NewValidator(
+		[]byte(`{"type":"object"}`),
+		map[string]string{"jailbreak": "越狱"},
+		10,
+		70,
+	)
+	if err != nil {
+		t.Fatalf("NewValidator() error = %v", err)
+	}
+	tests := []struct {
+		name string
+		give string
+	}{
+		{
+			name: "rejects unknown label",
+			give: `{"label":"review","explanation":"内容没有攻击或规避安全控制的意图"}`,
+		},
+		{
+			name: "rejects unknown risk level",
+			give: `{"label":"unsafe","explanation":"内容具有明确的攻击意图",` +
+				`"extended_info":{"risk_type":"jailbreak","risk_level":"critical"}}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := validator.Validate([]byte(test.give))
+			if !errors.Is(err, service.ErrInvalidResult) {
+				t.Fatalf("Validate() error = %v, want %v", err, service.ErrInvalidResult)
+			}
+		})
+	}
+}

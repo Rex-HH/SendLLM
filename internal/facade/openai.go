@@ -54,8 +54,8 @@ func NewOpenAI(cfg Config) (*OpenAI, error) {
 	if cfg.BaseURL == "" || cfg.APIKey == "" || cfg.Model == "" {
 		return nil, errors.New("openai configuration requires base URL, API key, and model")
 	}
-	if cfg.Timeout <= 0 || cfg.MaxConnections < 1 {
-		return nil, errors.New("openai configuration has invalid timeout or max connections")
+	if cfg.MaxTokens <= 0 || cfg.Timeout <= 0 || cfg.MaxConnections < 1 {
+		return nil, errors.New("openai configuration has invalid token, timeout, or connection limit")
 	}
 	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	if _, err := url.ParseRequestURI(baseURL); err != nil {
@@ -111,22 +111,19 @@ func (o *OpenAI) Complete(ctx context.Context, req dto.CompletionRequest) (dto.C
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		rawResponse, err := readResponse(response.Body)
-		if err != nil {
-			return dto.CompletionResponse{}, &dto.ProviderError{
-				Kind:       dto.ProviderMalformedResponse,
-				StatusCode: response.StatusCode,
-				Err:        err,
-			}
+		providerErr := providerStatusError(response)
+		rawResponse, readErr := readResponse(response.Body)
+		if readErr != nil {
+			providerErr.Err = readErr
 		}
-		return dto.CompletionResponse{RawResponse: rawResponse}, providerStatusError(response)
+		return dto.CompletionResponse{RawResponse: rawResponse}, providerErr
 	}
 
 	rawResponse, err := readResponse(response.Body)
-	if err != nil {
-		return dto.CompletionResponse{}, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: err}
-	}
 	completion := dto.CompletionResponse{RawResponse: append([]byte(nil), rawResponse...)}
+	if err != nil {
+		return completion, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: err}
+	}
 	var decoded completionWireResponse
 	if err := json.Unmarshal(rawResponse, &decoded); err != nil {
 		return completion, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: err}
@@ -226,7 +223,7 @@ func providerNetworkError(err error) error {
 	return &dto.ProviderError{Kind: dto.ProviderNetwork, Err: err}
 }
 
-func providerStatusError(response *http.Response) error {
+func providerStatusError(response *http.Response) *dto.ProviderError {
 	providerErr := &dto.ProviderError{StatusCode: response.StatusCode}
 	switch response.StatusCode {
 	case http.StatusRequestTimeout:
@@ -262,11 +259,11 @@ func retryAfter(value string, now time.Time) time.Duration {
 
 func readResponse(body io.Reader) ([]byte, error) {
 	response, err := io.ReadAll(io.LimitReader(body, maxResponseBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read completion response: %w", err)
-	}
 	if len(response) > maxResponseBytes {
-		return nil, errors.New("completion response exceeds size limit")
+		return response[:maxResponseBytes], errors.New("completion response exceeds size limit")
+	}
+	if err != nil {
+		return response, fmt.Errorf("read completion response: %w", err)
 	}
 	return response, nil
 }

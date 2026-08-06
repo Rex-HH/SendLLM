@@ -2,16 +2,24 @@
 
 ## Active Work
 
-`feat-001` through `feat-006` are complete and verified, including the required 50-record real-model acceptance.
+No feature is active. `feat-001` through `feat-006` are complete and verified; the required 50-record real-model acceptance is historical evidence and was not rerun during the final fix wave.
 
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: first-release implementation and final acceptance are complete.
-- Branch / commit: `feature/sendllm-implementation`; review round 2 started from `506da53`.
+- Current status: first-release implementation, acceptance, and the final review fix wave are complete.
+- Branch / commit: `feature/sendllm-implementation`; final fix wave started from `f740d2b`.
 
 ## Completed This Session
 
+- [x] Fixed SQLite retry ordering with fixed-width UTC timestamps and normalized legacy variable-width values on open.
+- [x] Preserved large integer precision in source hashing with `json.Decoder.UseNumber`.
+- [x] Separated Runner claim and work cancellation so upstream cancellation drains in-flight calls until `shutdown_timeout`, while task failures cancel immediately.
+- [x] Rejected non-positive `max_tokens` and moved Validator/OpenAI/Limiter/Runner construction before durable task creation and import.
+- [x] Enforced fixed `label` and `risk_level` enums independently of the configured Schema.
+- [x] Kept non-2xx HTTP classification when response-body reads fail or overflow and bounded the retained audit prefix to 4 MiB.
+- [x] Covered Export residue ignores and suffixes, aligned operator defaults, corrected the sentinel Go doc, and filled the three requested test gaps.
+- [x] Used only synthetic/fake-provider tests in this wave; no real provider call or acceptance-artifact read/write occurred.
 - [x] Ran dependency cleanup, all-Go formatting, five-second parser fuzzing, full tests, race tests, and vet.
 - [x] Proved the real gateway rejects `json_schema` with HTTP 400 but accepts `json_object` with HTTP 200.
 - [x] Added a RED/GREEN regression that preserves bounded HTTP and malformed provider failure responses for SQLite audit without logging them.
@@ -45,6 +53,12 @@
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
+| Final fix focused regressions | combined affected-package command across seven packages | pass, exit 0 | Covers all nine findings and three explicit coverage gaps. |
+| Final fix race gate | `go test -race . ./internal/dao ./internal/facade ./internal/lib/limiter ./internal/service -count=1` | pass, exit 0 | Exercises CLI, persistence, provider, limiter, and Runner changes under the race detector. |
+| Final fix parser fuzz | `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` | pass, exit 0 | 6,738 executions without a crash or hang. |
+| Final fix standard gate | `./init.sh` | pass, exit 0 | Formatting, all tests, full race tests, and vet passed. |
+| Final fix hygiene | `git diff --check`; added-Go-line scan; Export ignore checks; security/scope scans | pass | Zero long added Go lines, secret literals, payload logging paths, out-of-scope services, or sensitive artifact changes. |
+| Real-model scope | not run | intentionally omitted | This wave did not call a real model; historical acceptance evidence below remains unchanged. |
 | Task 7 build | `go build -trimpath -o /private/tmp/sendllm-task7-final .` | pass, exit 0 | Empty stdout; real binary, no fake replacement. Runtime and final Task 7 production Go source had no diff. |
 | Task 7 cleanup and fuzz | `GOPROXY=https://proxy.golang.org,direct go mod tidy`; all-Go `gofmt`; `git diff --check`; `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` | pass, exit 0 | Direct/indirect requirements normalized; fuzz completed 6,693 executions without a crash or hang. |
 | Failure audit RED/GREEN | `go test ./internal/facade -run '^TestOpenAI_CompletePreservesAuditableFailureResponse$' -v` | RED exit 1, GREEN exit 0 | RED assertions: HTTP 400 and malformed HTTP 200 both had empty `RawResponse`; GREEN passed both cases after bounded propagation. No real raw payload was printed. |
@@ -72,6 +86,14 @@
 
 ## Files Changed
 
+- `.gitignore`, `README.md`, `config/task.example.yaml`
+- `main.go`, `main_test.go`
+- `internal/dao/import.go`, `items.go`, `sqlite.go`, and focused tests
+- `internal/facade/openai.go`, `openai_test.go`
+- `internal/lib/configs/config.go`, `config_test.go`
+- `internal/service/exporter.go`, `runner.go`, `validator.go`, and focused tests
+- `internal/dto/annotation_test.go`, `sample_test.go`, `internal/lib/limiter/limiter_test.go`
+- `feature_list.json`, `progress.md`, `session-handoff.md`
 - `internal/facade/openai.go`, `internal/facade/openai_test.go`
 - `feature_list.json`, `progress.md`, `session-handoff.md`
 - `main.go`, `main_test.go`
@@ -116,12 +138,17 @@
 - For this reasoning model, the accepted run raised `max_tokens` from 500 to 2000 after 500 caused empty-content length truncation.
 - Configuration resolves all task-relative paths before execution and rejects YAML unknown fields and client-managed `extra_body` keys.
 - SQLite stores canonical source hashes for idempotency while retaining raw source JSON; a changed `trace_id` source aborts and rolls back the entire import transaction.
+- SQLite retry timestamps use a fixed-width nine-digit UTC representation so text ordering is chronological; opening the state normalizes legacy values under the single-process contract.
+- Runner owns separate claim and in-flight work contexts: upstream cancellation drains bounded work, while task-level causes cancel both immediately.
+- All fallible, side-effect-free construction completes before task creation and import.
 
 ## Blockers / Risks
 
 - Provider RPM/TPM remain undocumented; transient 429s occurred during acceptance even at concurrency 4 and were recovered by durable retries.
 - The original design target of concurrency 64 is superseded by real-gateway evidence. The current formal recommendation is concurrency 4 with continued calibration against observed 429s.
 - OpenAI-compatible capability is provider-specific. Do not switch this task back to `json_schema` without a new state file and a fresh capability check.
+- Runner shutdown assumes `Completer.Complete` honors context; Go cannot forcibly stop an implementation that ignores cancellation forever.
+- Retry-time migration is intentionally single-process and does not coordinate multiple concurrent instances.
 
 ## Next Session Startup
 

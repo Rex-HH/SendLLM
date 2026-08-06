@@ -8,10 +8,10 @@ model:
   base_url: https://aigateway.venusgroup.com.cn/ai/deepseek/openai
   api_key_env: AI_GATEWAY_API_KEY
   name: deepseek-v4-pro
-  structured_output: json_schema
+  structured_output: json_object
   temperature: 0
   top_p: 1
-  max_tokens: 500
+  max_tokens: 2000
   seed: 42
   timeout: 60s
   extra_body:
@@ -23,7 +23,7 @@ prompt:
   risk_types_file: risk-types.yaml
 
 runtime:
-  concurrency: 64
+  concurrency: 4
   requests_per_minute: 0
   tokens_per_minute: 0
   shutdown_timeout: 30s

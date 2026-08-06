@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -59,6 +60,10 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := normalizeRetryTimes(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 
@@ -84,6 +89,67 @@ func (s *Store) EnsureTask(ctx context.Context, task Task) error {
 	}
 	if existingHash != task.SemanticHash {
 		return fmt.Errorf("task %q: %w", task.ID, ErrTaskMismatch)
+	}
+	return nil
+}
+
+type retryTimeUpdate struct {
+	rowID   int64
+	encoded string
+}
+
+// normalizeRetryTimes 无损规范旧状态库中的变长 RFC3339Nano 重试时间。
+func normalizeRetryTimes(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, "SELECT rowid, next_attempt_at FROM items WHERE next_attempt_at IS NOT NULL")
+	if err != nil {
+		return fmt.Errorf("load retry times for migration: %w", err)
+	}
+	updates := make([]retryTimeUpdate, 0)
+	for rows.Next() {
+		var rowID int64
+		var stored string
+		if err := rows.Scan(&rowID, &stored); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan retry time for migration: %w", err)
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, stored)
+		if err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("parse retry time for migration: %w", err)
+		}
+		encoded := formatNextAttemptAt(parsed)
+		if encoded != stored {
+			updates = append(updates, retryTimeUpdate{rowID: rowID, encoded: encoded})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate retry times for migration: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close retry time migration rows: %w", err)
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin retry time migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, update := range updates {
+		if _, err := tx.ExecContext(
+			ctx,
+			"UPDATE items SET next_attempt_at = ? WHERE rowid = ?",
+			update.encoded,
+			update.rowID,
+		); err != nil {
+			return fmt.Errorf("update retry time for migration: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit retry time migration: %w", err)
 	}
 	return nil
 }

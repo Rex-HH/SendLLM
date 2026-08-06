@@ -3,12 +3,16 @@
 ## Current State
 
 **Last Updated:** 2026-08-06
-**Active Feature:** none; `feat-001` through `feat-006` complete
+**Active Feature:** none
 
 ## Status
 
 ### What's Done
 
+- [x] Closed the final review fix wave: normalized SQLite retry timestamps with legacy migration, preserved large JSON integers during hashing, and separated Runner claim/work cancellation for graceful drain.
+- [x] Moved all fallible construction before task/import persistence, rejected non-positive `max_tokens`, and independently enforced fixed annotation enums.
+- [x] Preserved HTTP failure classification across bounded body-read failures, ignored Export staging artifacts, and aligned the example config with the verified gateway settings.
+- [x] Added the requested DTO and Limiter coverage gaps and verified the complete change set with focused, race, fuzz, formatting, test, and vet gates.
 - [x] Completed `feat-006`: dependency/format cleanup, parser fuzz smoke, full Harness gate, real-gateway capability probe, auditable provider failures, and 50/50 real-model acceptance.
 - [x] Completed `feat-005`: ordered success/failure export, atomic file replacement, thin CLI wiring, safe progress, exit codes, and operator documentation.
 - [x] Completed `feat-004`: atomic SQLite item transitions, resumable bounded Runner, durable retries, format repair, shared cooldown, cancellation, and payload-free progress.
@@ -38,6 +42,8 @@
 - [x] This gateway rejected `json_schema` with HTTP 400 while accepting an otherwise equivalent `json_object` request with HTTP 200.
 - [ ] `deepseek-v4-pro` uses completion budget for reasoning; `max_tokens=500` produced `finish_reason=length` with empty content, while the accepted run used 2000.
 - [ ] The original design target of concurrency 64 is superseded by real-gateway evidence; the current formal recommendation is concurrency 4 with continued calibration against 429s.
+- [ ] Graceful timeout cancellation depends on `Completer.Complete` honoring its context; Go cannot forcibly terminate a permanently noncompliant implementation.
+- [ ] Legacy retry-time migration follows the approved single-process architecture and does not coordinate concurrent process opens.
 
 ## Decisions Made
 
@@ -53,9 +59,18 @@
 - The real gateway acceptance uses `json_object`; `json_schema` was rejected by the provider.
 - The final 50-record run uses `max_tokens=2000` because audit metadata proved that 500 tokens could be exhausted by reasoning before final content.
 - The configuration default of concurrency 64 is a historical design target, not the current operating recommendation; real evidence sets the starting point to 4 with continued calibration.
+- Store retry instants as fixed-width, nine-digit UTC RFC3339 text so SQLite lexical order matches chronological order; normalize legacy values when opening the single-process state store.
+- Upstream cancellation stops new claims and drains in-flight calls until `shutdown_timeout`; task-level failures still cancel claims and work immediately.
+- Complete Validator, OpenAI, Limiter, and Runner construction before `EnsureTask` or Import so invalid configuration cannot leave durable state.
 
 ## Files Modified This Session
 
+- `.gitignore`, `README.md`, `config/task.example.yaml` - Export residue exclusions and verified gateway operating defaults.
+- `main.go`, `main_test.go` - Side-effect-free construction ordering and graceful shutdown timeout wiring.
+- `internal/dao/` - Fixed-width retry timestamps, legacy migration, precise JSON number hashing, and regressions.
+- `internal/facade/`, `internal/service/`, `internal/lib/configs/` - Stable provider classification, bounded audit prefixes, strict invariants, Runner lifecycle, and construction validation.
+- `internal/dto/*_test.go`, `internal/lib/limiter/limiter_test.go` - Unknown-field and cooldown non-shortening coverage.
+- `feature_list.json`, `progress.md`, `session-handoff.md` - Final feature status, verification evidence, decisions, and residual risks.
 - `internal/service/live_acceptance_test.go` - Tracked opt-in acceptance test for existing local artifacts; it never calls the model and reports aggregate counts only.
 - `feature_list.json`, `progress.md`, `session-handoff.md` - Review round 2 reproducibility and verification evidence only.
 - `internal/facade/openai.go`, `openai_test.go` - Preserve bounded provider failure responses for SQLite audit on HTTP and malformed-completion errors.
@@ -85,6 +100,12 @@
 
 ## Evidence Of Completion
 
+- [x] Final fix focused regressions across seven packages exited 0; the new tests were observed failing before their implementations where behavior changed.
+- [x] Final fix race gate: `go test -race . ./internal/dao ./internal/facade ./internal/lib/limiter ./internal/service -count=1` exited 0.
+- [x] Final fix fuzz gate: `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` exited 0 after 6,738 executions.
+- [x] Final fix standard gate: `./init.sh` exited 0 with formatting, all tests, full race tests, and `go vet ./...` passing.
+- [x] Final fix hygiene: `git diff --check`, added-Go-line length, Export ignore, secret/payload logging, out-of-scope service, and sensitive-artifact scans all passed with zero findings.
+- [x] No real model request was made during the final fix wave; the historical 50-record acceptance evidence below was retained and not rerun.
 - [x] Task 7 pinned non-secret config: `base_url=https://aigateway.venusgroup.com.cn/ai/deepseek/openai`, `model=deepseek-v4-pro`, `api_key_env=AI_GATEWAY_API_KEY`; `zsh -lic 'test -n "$AI_GATEWAY_API_KEY"'` exited 0 without printing its value.
 - [x] Task 7 build: `go build -trimpath -o /private/tmp/sendllm-task7-final .` exited 0 with empty stdout; runtime production Go source and final Task 7 production Go source had no diff.
 - [x] Task 7 dependency/format gate: `GOPROXY=https://proxy.golang.org,direct go mod tidy`, all-Go `gofmt`, and `git diff --check` exited 0 without dependency version drift; direct/indirect requirements and necessary checksums were normalized.
@@ -111,4 +132,4 @@
 
 ## Notes For Next Session
 
-All Harness features are complete. Re-run `./init.sh` after any change. For a production batch, keep the API Key environment-only, use a new state file for semantic changes, and start at concurrency 4 while continuing to calibrate against observed 429s. The design-time concurrency-64 target is superseded by this evidence.
+All Harness features are complete and no feature is active. The final fix wave did not call the real model; the recorded 50-item live acceptance remains historical evidence. Re-run `./init.sh` after any change. For a production batch, keep the API Key environment-only, use a new state file for semantic changes, and start at concurrency 4 while continuing to calibrate against observed 429s.

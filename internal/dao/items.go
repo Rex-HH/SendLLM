@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const nextAttemptLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
 var (
 	// ErrInvalidTransition 表示样本当前状态不允许目标迁移。
 	ErrInvalidTransition = errors.New("dao: invalid item state transition")
@@ -137,7 +139,7 @@ func (s *Store) Claim(ctx context.Context, taskID string, limit int, now time.Ti
 		taskID,
 		ItemPending,
 		ItemRetryWait,
-		now.UTC().Format(time.RFC3339Nano),
+		formatNextAttemptAt(now),
 		limit,
 	)
 	if err != nil {
@@ -206,7 +208,7 @@ func (s *Store) ScheduleRetry(
 			ItemRetryWait,
 			attempt.RequestNumber,
 			attempt.RepairNumber,
-			next.UTC().Format(time.RFC3339Nano),
+			formatNextAttemptAt(next),
 			category,
 			summary,
 			taskID,
@@ -509,4 +511,8 @@ func insertAttempt(ctx context.Context, tx *sql.Tx, taskID string, traceID strin
 		return fmt.Errorf("insert attempt for trace_id %q: %w", traceID, err)
 	}
 	return nil
+}
+
+func formatNextAttemptAt(value time.Time) string {
+	return value.UTC().Format(nextAttemptLayout)
 }

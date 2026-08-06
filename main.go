@@ -48,37 +48,6 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(ctx, logger, cfg.Task.ID, "configuration")
 	}
-
-	store, err := dao.Open(ctx, cfg.Task.State)
-	if err != nil {
-		return fail(ctx, logger, cfg.Task.ID, "storage")
-	}
-	defer func() { _ = store.Close() }()
-	if err := store.EnsureTask(ctx, dao.Task{ID: cfg.Task.ID, SemanticHash: semanticHash}); err != nil {
-		return fail(ctx, logger, cfg.Task.ID, "storage")
-	}
-	exportOnFailure := true
-	defer func() {
-		if !exportOnFailure {
-			return
-		}
-		exportCtx, cancelExport := terminalExportContext(ctx, cfg.Runtime.ShutdownTimeout)
-		defer cancelExport()
-		if _, err := service.Export(exportCtx, store, cfg.Task.ID, cfg.Task.Output); err != nil {
-			logger.ErrorContext(exportCtx, "task export failed", "task_id", cfg.Task.ID, "error_category", "export")
-		}
-	}()
-
-	input, err := os.Open(cfg.Task.Input)
-	if err != nil {
-		return fail(ctx, logger, cfg.Task.ID, "input")
-	}
-	importStats, importErr := service.Import(ctx, store, cfg.Task.ID, input)
-	closeErr := input.Close()
-	if importErr != nil || closeErr != nil {
-		return fail(ctx, logger, cfg.Task.ID, "import")
-	}
-
 	validator, err := service.NewValidator(
 		cfg.ResultSchema,
 		cfg.RiskTypes,
@@ -111,6 +80,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(ctx, logger, cfg.Task.ID, "limiter")
 	}
+
+	store, err := dao.Open(ctx, cfg.Task.State)
+	if err != nil {
+		return fail(ctx, logger, cfg.Task.ID, "storage")
+	}
+	defer func() { _ = store.Close() }()
 	runner, err := service.NewRunner(service.RunnerConfig{
 		TaskID:               cfg.Task.ID,
 		SystemPrompt:         cfg.SystemPrompt,
@@ -120,6 +95,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		MaxOutputTokens:      cfg.Model.MaxTokens,
 		RequestMaxAttempts:   cfg.Retry.RequestMaxAttempts,
 		FormatRepairAttempts: cfg.Retry.FormatRepairAttempts,
+		ShutdownTimeout:      cfg.Runtime.ShutdownTimeout,
 		Store:                store,
 		Completer:            completer,
 		Validator:            validator,
@@ -145,6 +121,30 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	})
 	if err != nil {
 		return fail(ctx, logger, cfg.Task.ID, "runner")
+	}
+	if err := store.EnsureTask(ctx, dao.Task{ID: cfg.Task.ID, SemanticHash: semanticHash}); err != nil {
+		return fail(ctx, logger, cfg.Task.ID, "storage")
+	}
+	exportOnFailure := true
+	defer func() {
+		if !exportOnFailure {
+			return
+		}
+		exportCtx, cancelExport := terminalExportContext(ctx, cfg.Runtime.ShutdownTimeout)
+		defer cancelExport()
+		if _, err := service.Export(exportCtx, store, cfg.Task.ID, cfg.Task.Output); err != nil {
+			logger.ErrorContext(exportCtx, "task export failed", "task_id", cfg.Task.ID, "error_category", "export")
+		}
+	}()
+
+	input, err := os.Open(cfg.Task.Input)
+	if err != nil {
+		return fail(ctx, logger, cfg.Task.ID, "input")
+	}
+	importStats, importErr := service.Import(ctx, store, cfg.Task.ID, input)
+	closeErr := input.Close()
+	if importErr != nil || closeErr != nil {
+		return fail(ctx, logger, cfg.Task.ID, "import")
 	}
 
 	_, runErr := runner.Run(ctx)

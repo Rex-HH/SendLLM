@@ -109,8 +109,8 @@ func (c *Config) Validate() error {
 	if c.Model.StructuredOutput != "json_schema" && c.Model.StructuredOutput != "json_object" && c.Model.StructuredOutput != "prompt_only" {
 		return invalid("model structured_output is invalid")
 	}
-	if c.Model.Timeout <= 0 {
-		return invalid("model timeout must be positive")
+	if c.Model.MaxTokens <= 0 || c.Model.Timeout <= 0 {
+		return invalid("model max_tokens and timeout must be positive")
 	}
 	if c.Prompt.SystemFile == "" || c.Prompt.RiskTypesFile == "" {
 		return invalid("prompt paths are required")

@@ -65,6 +65,27 @@ func TestLimiterCooldownWaits(t *testing.T) {
 	}
 }
 
+func TestLimiterEarlierCooldownDoesNotShortenExistingDeadline(t *testing.T) {
+	value, err := limiter.New(limiter.Config{Concurrency: 1})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	started := time.Now()
+	value.Cooldown(started.Add(60 * time.Millisecond))
+	value.Cooldown(started.Add(10 * time.Millisecond))
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	release, err := value.Acquire(ctx, 0)
+	if err != nil {
+		t.Fatalf("Acquire() error = %v", err)
+	}
+	release()
+	if elapsed := time.Since(started); elapsed < 45*time.Millisecond {
+		t.Errorf("Acquire() returned after %v, want later cooldown deadline preserved", elapsed)
+	}
+}
+
 func TestLimiterZeroRatesDoNotBlock(t *testing.T) {
 	value, err := limiter.New(limiter.Config{Concurrency: 2})
 	if err != nil {

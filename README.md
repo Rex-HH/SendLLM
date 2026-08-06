@@ -44,7 +44,7 @@ export LLM_API_KEY='your-local-secret'
 - `json_object`：要求供应商返回 JSON 对象，结果仍经过完整本地 Schema 校验。
 - `prompt_only`：不发送 `response_format`，只依靠提示词约束，结果仍经过完整本地 Schema 校验。
 
-建议先使用 `runtime.concurrency: 64` 校准延迟和 HTTP 429 比例，再依据供应商文档逐步提高，最大值为 500。`requests_per_minute: 0` 或 `tokens_per_minute: 0` 表示不启用对应的本地主动限速；这不代表供应商没有配额。
+当前示例针对已验证网关使用 `json_object`、`max_tokens: 2000` 和 `runtime.concurrency: 4`。该网关拒绝 `json_schema`，且较低的输出预算可能在模型生成最终 JSON 前耗尽。建议从并发 4 开始校准延迟和 HTTP 429 比例，再依据供应商配额逐步调整，配置上限为 500。`requests_per_minute: 0` 或 `tokens_per_minute: 0` 表示不启用对应的本地主动限速；这不代表供应商没有配额。
 
 ## 运行与恢复
 
@@ -54,7 +54,7 @@ export LLM_API_KEY='your-local-secret'
 
 输入每行必须包含非空 `trace_id`，且 `prompt` 与 `response` 至少一个非空。未知输入字段会原样保留。相同配置再次运行时会复用 SQLite 状态：已经提交为 `succeeded` 的记录不会再次请求模型，遗留的 `processing` 记录会恢复为待处理。
 
-按 `Ctrl-C` 或发送 `SIGTERM` 会停止当前运行并返回退出码 `130`。程序会在 `runtime.shutdown_timeout` 限制内导出已经进入终态的记录；再次使用相同配置运行即可继续。
+按 `Ctrl-C` 或发送 `SIGTERM` 会停止领取新记录，并在 `runtime.shutdown_timeout` 内等待在途请求完成；超时后才取消剩余调用。程序随后在同一超时配置下导出已经进入终态的记录，并返回退出码 `130`；再次使用相同配置运行即可继续。
 
 ## 输出与审计
 
