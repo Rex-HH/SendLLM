@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -79,11 +80,209 @@ func TestRunner_RunPreservesCallerCancellationAfterRetryLookup(t *testing.T) {
 	}
 }
 
+func TestRunner_RunDrainsPeerWhenProgressRacesWithCallerCancellation(t *testing.T) {
+	store := openRunnerInternalStore(t)
+	finishedItem := runnerInternalItem("drain-finished", dao.ItemPending)
+	peerItem := runnerInternalItem("drain-peer", dao.ItemPending)
+	peerItem.InputIndex = 2
+	seedRunnerInternalItems(t, store, finishedItem, peerItem)
+
+	peerStarted := make(chan struct{})
+	releasePeer := make(chan struct{})
+	peerCanceled := make(chan error, 1)
+	peerExited := make(chan struct{})
+	response := dto.CompletionResponse{
+		Content:     []byte(`{"label":"safe","explanation":"synthetic"}`),
+		RawResponse: []byte(`{"synthetic":"response"}`),
+	}
+	runner := newRunnerInternal(t, store, runnerCompleterFunc(
+		func(ctx context.Context, request dto.CompletionRequest) (dto.CompletionResponse, error) {
+			switch runnerInternalTraceID(request) {
+			case "drain-finished":
+				<-peerStarted
+				return response, nil
+			case "drain-peer":
+				close(peerStarted)
+				defer close(peerExited)
+				select {
+				case <-ctx.Done():
+					peerCanceled <- context.Cause(ctx)
+					return dto.CompletionResponse{}, ctx.Err()
+				case <-releasePeer:
+					return response, nil
+				}
+			default:
+				return dto.CompletionResponse{}, errors.New("unexpected trace_id")
+			}
+		},
+	))
+	runner.cfg.ShutdownTimeout = 500 * time.Millisecond
+
+	progressQueryStarted := make(chan struct{})
+	releaseProgressQuery := make(chan struct{})
+	progressReported := make(chan struct{}, 1)
+	countsCalls := 0
+	runner.store = &runnerBarrierStore{
+		runnerStore: store,
+		beforeCounts: func(context.Context) {
+			countsCalls++
+			if countsCalls != 2 {
+				return
+			}
+			close(progressQueryStarted)
+			<-releaseProgressQuery
+		},
+	}
+	runner.cfg.OnProgress = func(Summary) {
+		select {
+		case progressReported <- struct{}{}:
+		default:
+		}
+	}
+
+	callerCause := errors.New("caller canceled during progress")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := runner.Run(ctx)
+		done <- err
+	}()
+
+	select {
+	case <-progressQueryStarted:
+	case <-time.After(time.Second):
+		close(releasePeer)
+		t.Fatal("Run() did not reach completed-result progress query")
+	}
+	cancel(callerCause)
+	close(releaseProgressQuery)
+	select {
+	case cause := <-peerCanceled:
+		close(releasePeer)
+		<-done
+		t.Fatalf("peer canceled before graceful drain: %v", cause)
+	case <-progressReported:
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releasePeer)
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, callerCause) {
+			t.Fatalf("Run() error = %v, want caller cause %v", err, callerCause)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not finish after graceful drain")
+	}
+	select {
+	case <-peerExited:
+	default:
+		t.Fatal("peer worker did not exit before Run returned")
+	}
+	select {
+	case cause := <-peerCanceled:
+		t.Fatalf("peer cancellation cause = %v, want graceful completion", cause)
+	default:
+	}
+	counts, err := store.Counts(context.Background(), "task-1")
+	if err != nil {
+		t.Fatalf("Counts() error = %v", err)
+	}
+	if counts.Succeeded != 2 || counts.Processing != 0 {
+		t.Fatalf("Counts() = %+v, want two succeeded and no processing items", counts)
+	}
+}
+
+func TestRunner_RunBoundsDrainWhenProgressQueryBlocksAfterCallerCancellation(t *testing.T) {
+	store := openRunnerInternalStore(t)
+	finishedItem := runnerInternalItem("blocked-progress-finished", dao.ItemPending)
+	peerItem := runnerInternalItem("blocked-progress-peer", dao.ItemPending)
+	peerItem.InputIndex = 2
+	seedRunnerInternalItems(t, store, finishedItem, peerItem)
+
+	peerStarted := make(chan struct{})
+	peerCanceled := make(chan error, 1)
+	response := dto.CompletionResponse{
+		Content:     []byte(`{"label":"safe","explanation":"synthetic"}`),
+		RawResponse: []byte(`{"synthetic":"response"}`),
+	}
+	runner := newRunnerInternal(t, store, runnerCompleterFunc(
+		func(ctx context.Context, request dto.CompletionRequest) (dto.CompletionResponse, error) {
+			switch runnerInternalTraceID(request) {
+			case "blocked-progress-finished":
+				<-peerStarted
+				return response, nil
+			case "blocked-progress-peer":
+				close(peerStarted)
+				<-ctx.Done()
+				peerCanceled <- context.Cause(ctx)
+				return dto.CompletionResponse{}, ctx.Err()
+			default:
+				return dto.CompletionResponse{}, errors.New("unexpected trace_id")
+			}
+		},
+	))
+	runner.cfg.ShutdownTimeout = 80 * time.Millisecond
+
+	progressQueryStarted := make(chan struct{})
+	releaseProgressQuery := make(chan struct{})
+	countsCalls := 0
+	runner.store = &runnerBarrierStore{
+		runnerStore: store,
+		beforeCounts: func(ctx context.Context) {
+			countsCalls++
+			if countsCalls != 2 {
+				return
+			}
+			close(progressQueryStarted)
+			select {
+			case <-ctx.Done():
+			case <-releaseProgressQuery:
+			}
+		},
+	}
+
+	callerCause := errors.New("caller canceled while progress query blocked")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := runner.Run(ctx)
+		done <- err
+	}()
+
+	select {
+	case <-progressQueryStarted:
+	case <-time.After(time.Second):
+		close(releaseProgressQuery)
+		t.Fatal("Run() did not reach blocked progress query")
+	}
+	cancel(callerCause)
+	select {
+	case err := <-done:
+		if !errors.Is(err, callerCause) {
+			t.Fatalf("Run() error = %v, want caller cause %v", err, callerCause)
+		}
+	case <-time.After(400 * time.Millisecond):
+		close(releaseProgressQuery)
+		<-done
+		t.Fatal("Run() did not honor shutdown_timeout while progress query was blocked")
+	}
+	select {
+	case cause := <-peerCanceled:
+		if !errors.Is(cause, callerCause) {
+			t.Fatalf("peer cancellation cause = %v, want caller cause %v", cause, callerCause)
+		}
+	default:
+		t.Fatal("peer worker was not canceled during bounded drain")
+	}
+}
+
 type runnerCompleterFunc func(context.Context, dto.CompletionRequest) (dto.CompletionResponse, error)
 
 type runnerBarrierStore struct {
 	runnerStore
 	beforeClaim      func(context.Context)
+	beforeCounts     func(context.Context)
 	afterNextRetryAt func(context.Context)
 }
 
@@ -104,6 +303,13 @@ func (s *runnerBarrierStore) Claim(
 		s.beforeClaim(ctx)
 	}
 	return s.runnerStore.Claim(ctx, taskID, limit, now)
+}
+
+func (s *runnerBarrierStore) Counts(ctx context.Context, taskID string) (dao.Counts, error) {
+	if s.beforeCounts != nil {
+		s.beforeCounts(ctx)
+	}
+	return s.runnerStore.Counts(ctx, taskID)
 }
 
 func (s *runnerBarrierStore) NextRetryAt(
@@ -201,4 +407,17 @@ func runnerInternalItem(traceID string, state dao.ItemState) dao.Item {
 		Prompt:     "synthetic",
 		State:      state,
 	}
+}
+
+func runnerInternalTraceID(request dto.CompletionRequest) string {
+	if len(request.Messages) == 0 {
+		return ""
+	}
+	var input struct {
+		TraceID string `json:"trace_id"`
+	}
+	if err := json.Unmarshal([]byte(request.Messages[len(request.Messages)-1].Content), &input); err != nil {
+		return ""
+	}
+	return input.TraceID
 }

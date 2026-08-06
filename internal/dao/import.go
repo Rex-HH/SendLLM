@@ -34,17 +34,34 @@ func (i *Import) Add(ctx context.Context, item Item) (ImportDisposition, error) 
 	}
 
 	var existingHash string
+	var existingRawJSON []byte
 	err = i.tx.QueryRowContext(
 		ctx,
-		"SELECT source_hash FROM items WHERE task_id = ? AND trace_id = ?",
+		"SELECT source_hash, raw_json FROM items WHERE task_id = ? AND trace_id = ?",
 		item.TaskID,
 		item.TraceID,
-	).Scan(&existingHash)
+	).Scan(&existingHash, &existingRawJSON)
 	if err == nil {
 		if existingHash == sourceHash {
 			return ImportSkipped, nil
 		}
-		return 0, fmt.Errorf("trace_id %q: %w", item.TraceID, ErrTraceConflict)
+		existingSourceHash, hashErr := normalizedSourceHash(existingRawJSON)
+		if hashErr != nil {
+			return 0, fmt.Errorf("hash stored source %q: %w", item.TraceID, hashErr)
+		}
+		if existingSourceHash != sourceHash {
+			return 0, fmt.Errorf("trace_id %q: %w", item.TraceID, ErrTraceConflict)
+		}
+		if _, updateErr := i.tx.ExecContext(
+			ctx,
+			"UPDATE items SET source_hash = ? WHERE task_id = ? AND trace_id = ?",
+			sourceHash,
+			item.TaskID,
+			item.TraceID,
+		); updateErr != nil {
+			return 0, fmt.Errorf("migrate source hash %q: %w", item.TraceID, updateErr)
+		}
+		return ImportSkipped, nil
 	}
 	if err != sql.ErrNoRows {
 		return 0, fmt.Errorf("find trace_id %q: %w", item.TraceID, err)

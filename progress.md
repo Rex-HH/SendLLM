@@ -9,6 +9,9 @@
 
 ### What's Done
 
+- [x] Completed the user-approved final re-review exception: Runner result bookkeeping now survives caller cancellation while peers drain, and legacy `source_hash` values migrate lazily from persisted `raw_json` without masking true conflicts.
+- [x] Proved the fixes with focused RED/GREEN tests, a 50-run deterministic concurrency stress, full DAO/Runner tests, race detection, the Harness gate, and parser fuzzing.
+- [x] Re-ran the required 50-record real-model end-to-end acceptance with the final latest code in a fresh temporary state/output directory; existing local acceptance artifacts were not overwritten.
 - [x] Closed the final review fix wave: normalized SQLite retry timestamps with legacy migration, preserved large JSON integers during hashing, and separated Runner claim/work cancellation for graceful drain.
 - [x] Moved all fallible construction before task/import persistence, rejected non-positive `max_tokens`, and independently enforced fixed annotation enums.
 - [x] Preserved HTTP failure classification across bounded body-read failures, ignored Export staging artifacts, and aligned the example config with the verified gateway settings.
@@ -62,9 +65,14 @@
 - Store retry instants as fixed-width, nine-digit UTC RFC3339 text so SQLite lexical order matches chronological order; normalize legacy values when opening the single-process state store.
 - Upstream cancellation stops new claims and drains in-flight calls until `shutdown_timeout`; task-level failures still cancel claims and work immediately.
 - Complete Validator, OpenAI, Limiter, and Runner construction before `EnsureTask` or Import so invalid configuration cannot leave durable state.
+- Completed-result progress queries remain caller-cancelable; caller cancellation is converted to bounded graceful drain instead of task abort, so blocked progress bookkeeping cannot exceed `shutdown_timeout`.
+- On a stored hash mismatch, duplicate import re-canonicalizes persisted `raw_json`; exact sources update `source_hash` in the import transaction, while different current hashes remain `ErrTraceConflict` even when legacy hashes collide.
 
 ## Files Modified This Session
 
+- `internal/service/runner.go`, `runner_internal_test.go` - Caller-cancellation progress race regression and work-context bookkeeping fix.
+- `internal/dao/import.go`, `sqlite_test.go` - Legacy source-hash compatibility, lazy transactional migration, and collision regressions.
+- `feature_list.json`, `progress.md`, `session-handoff.md` - User-approved exception closeout and verification evidence.
 - `.gitignore`, `README.md`, `config/task.example.yaml` - Export residue exclusions and verified gateway operating defaults.
 - `main.go`, `main_test.go` - Side-effect-free construction ordering and graceful shutdown timeout wiring.
 - `internal/dao/` - Fixed-width retry timestamps, legacy migration, precise JSON number hashing, and regressions.
@@ -100,12 +108,21 @@
 
 ## Evidence Of Completion
 
+- [x] Round 2 Runner RED/GREEN: `go test ./internal/service -run '^TestRunner_RunDrainsPeerWhenProgressRacesWithCallerCancellation$' -count=1 -timeout=10s -v` first exited 1 because the peer received the caller cause during progress bookkeeping, then exited 0 after converting caller-canceled progress errors to graceful drain.
+- [x] Round 2 review fix RED/GREEN: `go test ./internal/service -run '^TestRunner_RunBoundsDrainWhenProgressQueryBlocksAfterCallerCancellation$' -count=1 -timeout=5s -v` first exited 1 because Run did not honor `shutdown_timeout` while progress query was blocked, then exited 0 after keeping progress queries caller-cancelable.
+- [x] Round 2 DAO RED/GREEN: `go test ./internal/dao -run '^TestImport_Add(LazilyMigratesLegacyHashForExactSource|RejectsDifferentSourceDespiteLegacyHashCollision)$' -count=1 -v` first exited 1 for exact large-integer and `1.0` legacy sources, then exited 0 after raw-source re-canonicalization and lazy migration; the true collision case remained a conflict.
+- [x] Round 2 stability and related tests: the Runner race regression passed 50 consecutive runs; `go test ./internal/dao ./internal/service -run '^(TestImport_|TestRunner_)' -count=1` exited 0.
+- [x] Round 2 race and full gate: `go test -race ./internal/dao ./internal/service -count=1` and `./init.sh` exited 0.
+- [x] Round 2 fuzz: `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` exited 0 after 6,159 executions.
+- [x] Round 2 hygiene: `git diff --check`, added-Go-line length, secret/payload logging, out-of-scope service, and sensitive-artifact scans passed with zero findings.
+- [x] Round 2 real E2E: `zsh -lic 'exec /private/tmp/sendllm-live-final-moqKr4/sendllm -config /private/tmp/sendllm-live-final-moqKr4/task.yaml'` used the final latest binary, `json_object`, `max_tokens=2000`, concurrency 4, and a fresh temporary state/output; exit 0, stdout `added=50 skipped=0 succeeded=50 failed=0`.
+- [x] Round 2 live acceptance: `SENDLLM_LIVE_CONFIG="$PWD/config/task.example.yaml" SENDLLM_LIVE_INPUT=/Users/lijiayang/venus/SendLLM/Test_Input.jsonl SENDLLM_LIVE_OUTPUT=/private/tmp/sendllm-live-final-moqKr4/output.jsonl SENDLLM_LIVE_STATE=/private/tmp/sendllm-live-final-moqKr4/state.db SENDLLM_LIVE_TASK_ID=sendllm-final-live-20260806-moqKr4 go test ./internal/service -run '^TestLiveAcceptance$' -count=1 -v` exited 0; stdout `live_acceptance=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`.
 - [x] Final fix focused regressions across seven packages exited 0; the new tests were observed failing before their implementations where behavior changed.
 - [x] Final fix race gate: `go test -race . ./internal/dao ./internal/facade ./internal/lib/limiter ./internal/service -count=1` exited 0.
 - [x] Final fix fuzz gate: `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` exited 0 after 6,738 executions.
 - [x] Final fix standard gate: `./init.sh` exited 0 with formatting, all tests, full race tests, and `go vet ./...` passing.
 - [x] Final fix hygiene: `git diff --check`, added-Go-line length, Export ignore, secret/payload logging, out-of-scope service, and sensitive-artifact scans all passed with zero findings.
-- [x] No real model request was made during the final fix wave; the historical 50-record acceptance evidence below was retained and not rerun.
+- [x] First final-fix wave used synthetic tests only; the later user-approved re-review exception re-ran the latest code through the 50-record real-model acceptance above.
 - [x] Task 7 pinned non-secret config: `base_url=https://aigateway.venusgroup.com.cn/ai/deepseek/openai`, `model=deepseek-v4-pro`, `api_key_env=AI_GATEWAY_API_KEY`; `zsh -lic 'test -n "$AI_GATEWAY_API_KEY"'` exited 0 without printing its value.
 - [x] Task 7 build: `go build -trimpath -o /private/tmp/sendllm-task7-final .` exited 0 with empty stdout; runtime production Go source and final Task 7 production Go source had no diff.
 - [x] Task 7 dependency/format gate: `GOPROXY=https://proxy.golang.org,direct go mod tidy`, all-Go `gofmt`, and `git diff --check` exited 0 without dependency version drift; direct/indirect requirements and necessary checksums were normalized.
@@ -132,4 +149,4 @@
 
 ## Notes For Next Session
 
-All Harness features are complete and no feature is active. The final fix wave did not call the real model; the recorded 50-item live acceptance remains historical evidence. Re-run `./init.sh` after any change. For a production batch, keep the API Key environment-only, use a new state file for semantic changes, and start at concurrency 4 while continuing to calibrate against observed 429s.
+All Harness features are complete and no feature is active after the user-approved final re-review exception. The latest code passed a fresh 50-item real-model acceptance in `/private/tmp/sendllm-live-final-moqKr4`; existing local acceptance artifacts were not overwritten. Re-run `./init.sh` after any change. For a production batch, keep the API Key environment-only, use a new state file for semantic changes, and start at concurrency 4 while continuing to calibrate against observed 429s.

@@ -2,16 +2,22 @@
 
 ## Active Work
 
-No feature is active. `feat-001` through `feat-006` are complete and verified; the required 50-record real-model acceptance is historical evidence and was not rerun during the final fix wave.
+No feature is active. `feat-001` through `feat-006` are complete and verified, including the user-approved final re-review exception and a fresh 50-record real-model acceptance with the latest code.
 
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: first-release implementation, acceptance, and the final review fix wave are complete.
-- Branch / commit: `feature/sendllm-implementation`; final fix wave started from `f740d2b`.
+- Current status: first-release implementation, acceptance, final fix wave, and scoped re-review are complete.
+- Branch / commit: `feature/sendllm-implementation`; scoped re-review started from `7d36949`.
 
 ## Completed This Session
 
+- [x] Completed the user-approved Harness exception for the two load-bearing re-review findings.
+- [x] Made completed-result progress bookkeeping independent of caller claim cancellation, preserving graceful peer drain and the original caller cause.
+- [x] Kept completed-result progress queries caller-cancelable and converted caller-canceled progress errors into bounded graceful drain, so blocked bookkeeping still respects `shutdown_timeout`.
+- [x] Made importer duplicate checks re-canonicalize persisted `raw_json` when a stored hash differs, lazily upgrading exact legacy hashes while rejecting true legacy collisions.
+- [x] Added deterministic concurrency/cause/lifecycle coverage plus large-integer and `1.0` upgrade compatibility tests.
+- [x] Re-ran the required real model E2E in `/private/tmp/sendllm-live-final-moqKr4` with a fresh task ID, state DB, and output JSONL; existing local acceptance artifacts were not overwritten.
 - [x] Fixed SQLite retry ordering with fixed-width UTC timestamps and normalized legacy variable-width values on open.
 - [x] Preserved large integer precision in source hashing with `json.Decoder.UseNumber`.
 - [x] Separated Runner claim and work cancellation so upstream cancellation drains in-flight calls until `shutdown_timeout`, while task failures cancel immediately.
@@ -53,12 +59,22 @@ No feature is active. `feat-001` through `feat-006` are complete and verified; t
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
+| Re-review Runner RED/GREEN | `go test ./internal/service -run '^TestRunner_RunDrainsPeerWhenProgressRacesWithCallerCancellation$' -count=1 -timeout=10s -v` | RED exit 1; GREEN exit 0 | RED peer received caller cause during progress; GREEN preserved the cause while both items succeeded and all workers exited. |
+| Re-review shutdown bound RED/GREEN | `go test ./internal/service -run '^TestRunner_RunBoundsDrainWhenProgressQueryBlocksAfterCallerCancellation$' -count=1 -timeout=5s -v` | RED exit 1; GREEN exit 0 | RED stayed blocked in progress bookkeeping past `shutdown_timeout`; GREEN entered bounded drain. |
+| Re-review DAO RED/GREEN | `go test ./internal/dao -run '^TestImport_Add(LazilyMigratesLegacyHashForExactSource|RejectsDifferentSourceDespiteLegacyHashCollision)$' -count=1 -v` | RED exit 1; GREEN exit 0 | Exact legacy large integer and `1.0` sources migrate; adjacent-integer legacy collision remains `ErrTraceConflict`. |
+| Re-review determinism | exact Runner regression with `-count=50`; DAO/Runner focused suite | pass, exit 0 | Deterministic interleaving remained stable; all `TestImport_` and `TestRunner_` cases passed. |
+| Re-review race | `go test -race ./internal/dao ./internal/service -count=1` | pass, exit 0 | Full affected packages passed under the race detector. |
+| Re-review full gate | `./init.sh` | pass, exit 0 | Formatting, all tests, full race tests, and vet passed. |
+| Re-review fuzz | `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` | pass, exit 0 | 6,159 executions without crash or hang. |
+| Re-review scope | diff, line-length, secret/logging, out-of-scope, and sensitive-artifact scans | pass | Zero findings; no Key values or payload logging paths found. |
+| Latest real 50-record CLI | `zsh -lic 'exec /private/tmp/sendllm-live-final-moqKr4/sendllm -config /private/tmp/sendllm-live-final-moqKr4/task.yaml'` | pass, exit 0 | Fresh state/output; stdout `added=50 skipped=0 succeeded=50 failed=0`. |
+| Latest real output integrity | `SENDLLM_LIVE_CONFIG="$PWD/config/task.example.yaml" SENDLLM_LIVE_INPUT=/Users/lijiayang/venus/SendLLM/Test_Input.jsonl SENDLLM_LIVE_OUTPUT=/private/tmp/sendllm-live-final-moqKr4/output.jsonl SENDLLM_LIVE_STATE=/private/tmp/sendllm-live-final-moqKr4/state.db SENDLLM_LIVE_TASK_ID=sendllm-final-live-20260806-moqKr4 go test ./internal/service -run '^TestLiveAcceptance$' -count=1 -v` | pass, exit 0 | `live_acceptance=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`. |
 | Final fix focused regressions | combined affected-package command across seven packages | pass, exit 0 | Covers all nine findings and three explicit coverage gaps. |
 | Final fix race gate | `go test -race . ./internal/dao ./internal/facade ./internal/lib/limiter ./internal/service -count=1` | pass, exit 0 | Exercises CLI, persistence, provider, limiter, and Runner changes under the race detector. |
 | Final fix parser fuzz | `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` | pass, exit 0 | 6,738 executions without a crash or hang. |
 | Final fix standard gate | `./init.sh` | pass, exit 0 | Formatting, all tests, full race tests, and vet passed. |
 | Final fix hygiene | `git diff --check`; added-Go-line scan; Export ignore checks; security/scope scans | pass | Zero long added Go lines, secret literals, payload logging paths, out-of-scope services, or sensitive artifact changes. |
-| Real-model scope | not run | intentionally omitted | This wave did not call a real model; historical acceptance evidence below remains unchanged. |
+| First final-fix wave model scope | not run | intentionally omitted | That earlier wave used synthetic tests only; the latest user-approved re-review exception re-ran the 50-record real acceptance above. |
 | Task 7 build | `go build -trimpath -o /private/tmp/sendllm-task7-final .` | pass, exit 0 | Empty stdout; real binary, no fake replacement. Runtime and final Task 7 production Go source had no diff. |
 | Task 7 cleanup and fuzz | `GOPROXY=https://proxy.golang.org,direct go mod tidy`; all-Go `gofmt`; `git diff --check`; `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` | pass, exit 0 | Direct/indirect requirements normalized; fuzz completed 6,693 executions without a crash or hang. |
 | Failure audit RED/GREEN | `go test ./internal/facade -run '^TestOpenAI_CompletePreservesAuditableFailureResponse$' -v` | RED exit 1, GREEN exit 0 | RED assertions: HTTP 400 and malformed HTTP 200 both had empty `RawResponse`; GREEN passed both cases after bounded propagation. No real raw payload was printed. |
@@ -86,6 +102,9 @@ No feature is active. `feat-001` through `feat-006` are complete and verified; t
 
 ## Files Changed
 
+- `internal/service/runner.go`, `runner_internal_test.go`
+- `internal/dao/import.go`, `sqlite_test.go`
+- `feature_list.json`, `progress.md`, `session-handoff.md`
 - `.gitignore`, `README.md`, `config/task.example.yaml`
 - `main.go`, `main_test.go`
 - `internal/dao/import.go`, `items.go`, `sqlite.go`, and focused tests
@@ -141,6 +160,8 @@ No feature is active. `feat-001` through `feat-006` are complete and verified; t
 - SQLite retry timestamps use a fixed-width nine-digit UTC representation so text ordering is chronological; opening the state normalizes legacy values under the single-process contract.
 - Runner owns separate claim and in-flight work contexts: upstream cancellation drains bounded work, while task-level causes cancel both immediately.
 - All fallible, side-effect-free construction completes before task creation and import.
+- Completed-result progress bookkeeping remains caller-cancelable; expected caller cancellation becomes bounded graceful drain rather than task failure.
+- Legacy hash compatibility trusts persisted `raw_json` as the durable source: current canonical equality skips and migrates in the same transaction; current inequality conflicts.
 
 ## Blockers / Risks
 

@@ -200,6 +200,9 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 							return Summary{}, resultErr
 						}
 						if err := r.reportProgress(claimCtx, tracker); err != nil {
+							if cause := context.Cause(ctx); cause != nil {
+								return Summary{}, drainWorkers(cause)
+							}
 							abortWorkers(err)
 							return Summary{}, err
 						}
@@ -227,6 +230,9 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 					return Summary{}, resultErr
 				}
 				if err := r.reportProgress(claimCtx, tracker); err != nil {
+					if cause := context.Cause(ctx); cause != nil {
+						return Summary{}, drainWorkers(cause)
+					}
 					abortWorkers(err)
 					return Summary{}, err
 				}
