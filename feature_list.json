@@ -37,8 +37,8 @@
       "name": "Ordered export and operator workflow",
       "description": "Export successful and failed JSONL deterministically, report safe progress without payload logging, document run/resume/tuning behavior, and provide examples.",
       "dependencies": ["feat-004"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-06: Export 与 CLI 严格 RED/GREEN 完成；go test ./internal/service -run TestExport、go test . -run TestRun、go test -race . ./internal/service 和 ./init.sh 全部通过。覆盖确定顺序、字段合并、安全失败诊断、原子替换、0/1/2/130 退出码、Schema/Mode 装配、失败后导出现有终态及载荷无日志泄漏。"
     },
     {
       "id": "feat-006",

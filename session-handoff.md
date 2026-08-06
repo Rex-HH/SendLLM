@@ -2,13 +2,13 @@
 
 ## Active Work
 
-`feat-004` is complete and verified. `feat-005` ordered export and CLI wiring is the next unblocked feature.
+`feat-005` is complete and verified. `feat-006` full verification and final handoff is the next unblocked feature.
 
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: `feat-001` through `feat-004` are complete; `feat-005` is next.
-- Branch / commit: `feature/sendllm-implementation`; base setup commit `7259b09`.
+- Current status: `feat-001` through `feat-005` are complete; `feat-006` is next.
+- Branch / commit: `feature/sendllm-implementation`; Task 6 base commit `7ea4821`.
 
 ## Completed This Session
 
@@ -29,6 +29,9 @@
 - [x] Added streaming JSONL import with 16 MiB line limit, source normalization hash, duplicate skip, conflict rollback, and fuzz coverage.
 - [x] Added atomic ordered claims, expected-state transitions, attempt persistence, retry scheduling, recovery counts, and next-retry lookup.
 - [x] Added the bounded Runner with owned goroutines, unbuffered handoff, shared cooldown, classified retries, format repair, cancellation, and safe progress callbacks.
+- [x] Added ordered streaming export, source-field preservation, generated-field replacement, safe failed JSONL, and atomic staged file replacement.
+- [x] Added the thin local CLI with environment-only API Key loading, configured Schema/Mode propagation, safe progress, resume export, and fixed exit codes.
+- [x] Added the operator README without real endpoint, Key, or dataset examples.
 
 ## Verification Evidence
 
@@ -45,9 +48,16 @@
 | Full gate after Task 3 | `./init.sh` | pass | Formatting, full tests, full race tests, and vet passed. |
 | Task 5 DAO and Runner | `go test ./internal/dao ./internal/service`; `go test -race ./internal/dao ./internal/service` | pass | Covers durable state transitions, no repeated success calls, bounded concurrency, retries, repairs, cancellation, and recovery. |
 | Full gate after Task 5 | `./init.sh` | pass | Formatting, all package tests, full race tests, and vet passed outside the port-restricted sandbox. |
+| Task 6 Export and CLI | `go test ./internal/service -run TestExport`; `go test . -run TestRun`; `go test -race . ./internal/service` | pass | Covers order, merging, safe diagnostics, atomic replacement, configured Schema/Mode, exit codes, resume failure export, and payload-free output. |
+| Full gate after Task 6 | `./init.sh` | pass | Formatting, all package tests, full race tests, and vet passed on 2026-08-06. |
 
 ## Files Changed
 
+- `main.go`, `main_test.go`
+- `internal/dao/items.go`
+- `internal/service/exporter.go`, `exporter_test.go`
+- `README.md`
+- `feature_list.json`, `progress.md`, `session-handoff.md`
 - `internal/lib/tokenizer/estimate.go` and `estimate_test.go`
 - `internal/lib/limiter/limiter.go` and `limiter_test.go`
 - `internal/service/retry.go` and `retry_test.go`
@@ -78,14 +88,16 @@
 - Structured result validation is local and strict.
 - Account concurrency is configurable up to 500, with shared rate-limit cooldown.
 - The first release must use the smallest readable implementation; all necessary Go comments are concise and written in Chinese.
+- The CLI passes the same loaded result Schema to Validator and Runner, and passes `model.structured_output` without hard-coding a provider mode.
+- After the task identity is verified, import or runner errors still trigger export of already-terminal SQLite records before exit.
 - Final acceptance uses `deepseek-v4-pro` through the configured real gateway and must produce 50/50 valid output records.
 - Configuration resolves all task-relative paths before execution and rejects YAML unknown fields and client-managed `extra_body` keys.
 - SQLite stores canonical source hashes for idempotency while retaining raw source JSON; a changed `trace_id` source aborts and rolls back the entire import transaction.
 
 ## Blockers / Risks
 
-- Actual provider RPM/TPM and structured-output capability require task configuration.
-- The fixed Task 5 `RunnerConfig` does not carry structured-output mode; Runner currently requests `json_schema`, so Task 6 must settle mode propagation before exposing other configured modes.
+- Actual provider RPM/TPM and structured-output capability require real gateway verification.
+- Task 6 used only local `httptest` provider integration; final acceptance still requires all 50 real records.
 
 ## Next Session Startup
 
@@ -93,8 +105,8 @@
 2. Read the design specification.
 3. Read `feature_list.json` and `progress.md`.
 4. Run `./init.sh`.
-5. Continue only from the documented recommended step.
+5. Run the real-model acceptance without printing the API Key value.
 
 ## Recommended Next Step
 
-- Implement `feat-005` ordered export and thin CLI wiring, preserving payload-free operational output.
+- Complete `feat-006`: run the real 50-record CLI acceptance, validate output and failure invariants, and record final evidence.

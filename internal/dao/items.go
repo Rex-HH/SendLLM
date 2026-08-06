@@ -70,6 +70,20 @@ type Counts struct {
 	Failed     int64
 }
 
+// ExportRecord 包含合并成功输出所需的源记录和合法标注。
+type ExportRecord struct {
+	RawJSON    []byte
+	Annotation []byte
+}
+
+// FailedRecord 包含失败文件允许公开的安全诊断字段。
+type FailedRecord struct {
+	TraceID       string
+	ErrorCategory string
+	ErrorSummary  string
+	Attempts      int
+}
+
 // ImportDisposition 表示一条样本在导入中的处理结果。
 type ImportDisposition int
 
@@ -268,6 +282,77 @@ func (s *Store) Counts(ctx context.Context, taskID string) (Counts, error) {
 		return Counts{}, fmt.Errorf("count items for task %q: %w", taskID, err)
 	}
 	return counts, nil
+}
+
+// ForEachSucceeded 按输入顺序访问任务的全部成功记录。
+func (s *Store) ForEachSucceeded(
+	ctx context.Context,
+	taskID string,
+	visit func(ExportRecord) error,
+) error {
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT raw_json, annotation FROM items
+		WHERE task_id = ? AND state = ? ORDER BY input_index`,
+		taskID,
+		ItemSucceeded,
+	)
+	if err != nil {
+		return fmt.Errorf("query succeeded exports for task %q: %w", taskID, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var record ExportRecord
+		if err := rows.Scan(&record.RawJSON, &record.Annotation); err != nil {
+			return fmt.Errorf("scan succeeded export for task %q: %w", taskID, err)
+		}
+		if err := visit(record); err != nil {
+			return fmt.Errorf("visit succeeded export for task %q: %w", taskID, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate succeeded exports for task %q: %w", taskID, err)
+	}
+	return nil
+}
+
+// ForEachFailed 按输入顺序访问任务的全部最终失败记录。
+func (s *Store) ForEachFailed(
+	ctx context.Context,
+	taskID string,
+	visit func(FailedRecord) error,
+) error {
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT trace_id, error_category, error_summary, request_attempts + repair_attempts
+		FROM items WHERE task_id = ? AND state = ? ORDER BY input_index`,
+		taskID,
+		ItemFailed,
+	)
+	if err != nil {
+		return fmt.Errorf("query failed exports for task %q: %w", taskID, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var record FailedRecord
+		if err := rows.Scan(
+			&record.TraceID,
+			&record.ErrorCategory,
+			&record.ErrorSummary,
+			&record.Attempts,
+		); err != nil {
+			return fmt.Errorf("scan failed export for task %q: %w", taskID, err)
+		}
+		if err := visit(record); err != nil {
+			return fmt.Errorf("visit failed export for task %q: %w", taskID, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate failed exports for task %q: %w", taskID, err)
+	}
+	return nil
 }
 
 // NextRetryAt 返回最早等待重试时间。

@@ -2,13 +2,14 @@
 
 ## Current State
 
-**Last Updated:** 2026-08-05
-**Active Feature:** none; `feat-004` complete, `feat-005` is next
+**Last Updated:** 2026-08-06
+**Active Feature:** none; `feat-005` complete, `feat-006` is next
 
 ## Status
 
 ### What's Done
 
+- [x] Completed `feat-005`: ordered success/failure export, atomic file replacement, thin CLI wiring, safe progress, exit codes, and operator documentation.
 - [x] Completed `feat-004`: atomic SQLite item transitions, resumable bounded Runner, durable retries, format repair, shared cooldown, cancellation, and payload-free progress.
 - [x] Confirmed local single-process CLI scope.
 - [x] Confirmed JSONL input and output, SQLite recovery, OpenAI-compatible API, and configurable prompts/model parameters.
@@ -26,16 +27,16 @@
 
 ### What's Next
 
-1. Start `feat-005`: ordered success/failure export and thin CLI wiring.
-2. Reuse the Runner's durable counts and annotation/failure fields without exposing audit payloads.
-3. Resolve structured-output mode wiring before supporting `json_object` or `prompt_only` in the CLI.
+1. Start `feat-006`: full verification and final handoff.
+2. Run the required real-model 50-record acceptance from `模型配置.md` and `Test_Input.jsonl` without exposing the API Key.
+3. Validate output count, unique `trace_id` set equality, formal Schema conformance, and zero failed records.
 
 ## Blockers / Risks
 
 - [ ] The account concurrency limit is reported as approximately 500, but RPM and TPM are not yet known; runtime configuration must remain conservative and observable.
 - [ ] OpenAI-compatible providers differ in JSON Schema and rate-limit-header support; capability mode must be explicit in configuration.
 - [ ] The real gateway may differ in `json_schema` support; Task 7 must test it and use the approved `json_object` fallback only with captured incompatibility evidence.
-- [ ] The fixed Task 5 `RunnerConfig` has no structured-output mode field; Runner currently sends `json_schema`, so Task 6 must resolve mode propagation before wiring other configured modes.
+- [ ] Task 6 used only `httptest` provider integration; this is not the final real-model acceptance.
 
 ## Decisions Made
 
@@ -51,6 +52,11 @@
 
 ## Files Modified This Session
 
+- `main.go`, `main_test.go` - Thin CLI assembly, safe exit mapping, structured-output propagation, resume failure export, and fake-provider integration tests.
+- `internal/dao/items.go` - Ordered streaming accessors for succeeded and failed export records.
+- `internal/service/exporter.go`, `exporter_test.go` - Deterministic merged JSONL export, safe failure JSONL, atomic staging, and failure preservation tests.
+- `README.md` - Build, configuration, operation, resume, tuning, output, audit, exit-code, and at-least-once semantics guide.
+- `feature_list.json`, `progress.md`, `session-handoff.md` - Task 6 status, evidence, risks, and next action.
 - `internal/lib/tokenizer/` - Conservative provider-neutral token estimation and tests.
 - `internal/lib/limiter/` - Concurrency, RPM, TPM, shared cooldown, and release-safety limits with race coverage.
 - `internal/service/retry.go`, `internal/service/retry_test.go` - Retry backoff and provider-failure classification.
@@ -71,6 +77,9 @@
 
 ## Evidence Of Completion
 
+- [x] Task 6 focused verification: `go test ./internal/service -run TestExport`, `go test . -run TestRun`, and `go test -race . ./internal/service` passed.
+- [x] Task 6 full gate: `./init.sh` passed formatting, all tests, full race tests, and `go vet ./...` on 2026-08-06.
+- [x] Mode wiring mutation check: hard-coding `json_schema` made `TestRunWiresConfiguredStructuredOutputMode` fail; restoring `cfg.Model.StructuredOutput` passed.
 - [x] Task 4 foundation verification: `go test ./internal/lib/tokenizer ./internal/lib/limiter ./internal/service -run 'Test(Estimate|Limiter|RetryPolicy|ClassifyFailure)'`, `go test -race ./internal/lib/limiter`, and `./init.sh` all passed.
 - [x] Harness validation: `100/100`, all five subsystems scored `5/5`.
 - [x] Design specification reviewed and approved by user.
@@ -82,4 +91,4 @@
 
 ## Notes For Next Session
 
-Start `feat-005` from ordered export and CLI wiring. `feat-004` is complete and verified; do not reopen its worker lifecycle without a failing regression test.
+Start `feat-006` from final verification and real 50-record acceptance. Task 6 fake-provider tests are intermediate evidence only.
