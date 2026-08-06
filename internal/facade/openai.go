@@ -111,33 +111,40 @@ func (o *OpenAI) Complete(ctx context.Context, req dto.CompletionRequest) (dto.C
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return dto.CompletionResponse{}, providerStatusError(response)
+		rawResponse, err := readResponse(response.Body)
+		if err != nil {
+			return dto.CompletionResponse{}, &dto.ProviderError{
+				Kind:       dto.ProviderMalformedResponse,
+				StatusCode: response.StatusCode,
+				Err:        err,
+			}
+		}
+		return dto.CompletionResponse{RawResponse: rawResponse}, providerStatusError(response)
 	}
 
 	rawResponse, err := readResponse(response.Body)
 	if err != nil {
 		return dto.CompletionResponse{}, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: err}
 	}
+	completion := dto.CompletionResponse{RawResponse: append([]byte(nil), rawResponse...)}
 	var decoded completionWireResponse
 	if err := json.Unmarshal(rawResponse, &decoded); err != nil {
-		return dto.CompletionResponse{}, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: err}
+		return completion, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: err}
 	}
 	if len(decoded.Choices) == 0 {
-		return dto.CompletionResponse{}, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: errors.New("missing completion choices")}
+		return completion, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: errors.New("missing completion choices")}
 	}
 	choice := decoded.Choices[0]
 	if choice.FinishReason == "content_filter" {
-		return dto.CompletionResponse{}, &dto.ProviderError{Kind: dto.ProviderContentRejected}
+		return completion, &dto.ProviderError{Kind: dto.ProviderContentRejected}
 	}
 	if choice.Message.Content == "" {
-		return dto.CompletionResponse{}, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: errors.New("missing completion content")}
+		return completion, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: errors.New("missing completion content")}
 	}
-	return dto.CompletionResponse{
-		Content:      []byte(choice.Message.Content),
-		RawResponse:  append([]byte(nil), rawResponse...),
-		FinishReason: choice.FinishReason,
-		Usage:        decoded.Usage,
-	}, nil
+	completion.Content = []byte(choice.Message.Content)
+	completion.FinishReason = choice.FinishReason
+	completion.Usage = decoded.Usage
+	return completion, nil
 }
 
 func (o *OpenAI) requestBody(req dto.CompletionRequest) ([]byte, error) {

@@ -196,6 +196,48 @@ func TestOpenAI_CompleteClassifiesProviderFailures(t *testing.T) {
 	}
 }
 
+func TestOpenAI_CompletePreservesAuditableFailureResponse(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		kind       dto.ProviderErrorKind
+	}{
+		{
+			name:       "HTTP error",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"message":"synthetic rejection"}}`,
+			kind:       dto.ProviderBadRequest,
+		},
+		{
+			name:       "malformed completion",
+			statusCode: http.StatusOK,
+			body:       `{"choices":[]}`,
+			kind:       dto.ProviderMalformedResponse,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(test.statusCode)
+				_, _ = fmt.Fprint(w, test.body)
+			}))
+			t.Cleanup(server.Close)
+
+			client := newTestClient(t, server.URL)
+			response, err := client.Complete(context.Background(), completionRequest("json_schema"))
+			var providerErr *dto.ProviderError
+			if !errors.As(err, &providerErr) || providerErr.Kind != test.kind {
+				t.Fatalf("Complete() error = %v, want %s ProviderError", err, test.kind)
+			}
+			if got := string(response.RawResponse); got != test.body {
+				t.Errorf("RawResponse = %q, want synthetic failure response", got)
+			}
+		})
+	}
+}
+
 func TestOpenAI_CompleteRejectsOversizedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprint(w, strings.Repeat("x", 4*1024*1024+1))

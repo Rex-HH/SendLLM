@@ -2,16 +2,22 @@
 
 ## Active Work
 
-`feat-005` is complete and verified. `feat-006` full verification and final handoff is the next unblocked feature.
+`feat-001` through `feat-006` are complete and verified, including the required 50-record real-model acceptance.
 
 ## Current Objective
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
-- Current status: `feat-001` through `feat-005` are complete; `feat-006` is next.
-- Branch / commit: `feature/sendllm-implementation`; Task 6 base commit `7ea4821`.
+- Current status: first-release implementation and final acceptance are complete.
+- Branch / commit: `feature/sendllm-implementation`; Task 7 started from `656a0df`.
 
 ## Completed This Session
 
+- [x] Ran dependency cleanup, all-Go formatting, five-second parser fuzzing, full tests, race tests, and vet.
+- [x] Proved the real gateway rejects `json_schema` with HTTP 400 but accepts `json_object` with HTTP 200.
+- [x] Added a RED/GREEN regression that preserves bounded HTTP and malformed provider failure responses for SQLite audit without logging them.
+- [x] Diagnosed `max_tokens=500` failures from safe metadata: valid envelopes ended with `finish_reason=length`, zero content, and 500 completion tokens.
+- [x] Completed the compiled real CLI run with a fresh formal state, `json_object`, `max_tokens=2000`, concurrency 4, and 50 succeeded / 0 failed.
+- [x] Independently validated all 50 outputs with the formal Schema and production `service.Validator`, exact unique trace ID equality, automatic annotation metadata, and zero failed state records.
 - [x] Resolved product scope and data contract.
 - [x] Selected SQLite-backed architecture.
 - [x] Designed concurrency, retry, validation, and export behavior.
@@ -37,6 +43,12 @@
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
+| Task 7 cleanup and fuzz | `go mod tidy`; all-Go `gofmt`; `git diff --check`; `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` | pass | Direct/indirect requirements normalized; fuzz completed 6,693 executions without a crash or hang. |
+| Failure audit RED/GREEN | `go test ./internal/facade -run '^TestOpenAI_CompletePreservesAuditableFailureResponse$' -v` | pass after expected RED | Covers bounded raw-response propagation on HTTP 400 and malformed success envelopes; no payload is logged. |
+| Task 7 facade and full gate | `go test ./internal/facade`; `go test -race ./internal/facade`; `./init.sh` | pass | Full tests, full race detector, formatting, and vet passed after the audit fix. |
+| Real capability check | compiled client against the configured gateway in `json_schema` and `json_object` modes | fallback confirmed | `json_schema` returned HTTP 400 structured-output rejection; equivalent `json_object` returned HTTP 200. |
+| Real 50-record CLI | `/private/tmp/sendllm-task7-final -config /private/tmp/sendllm-task7-final.yaml` | pass, exit 0 | Fresh `Test_State.db`; added 50, skipped 0, succeeded 50, failed 0; `json_object`, max tokens 2000, concurrency 4. |
+| Real output integrity | temporary local verifier using `config/result-schema.json`, `service.Validator`, and `dao.Counts` | pass | Input/output 50, unique trace ID sets equal, safe 34, unsafe 16, all Schema/semantic-valid, all method=auto, failed file/state 0. |
 | Task 4 foundation | `go test ./internal/lib/tokenizer ./internal/lib/limiter ./internal/service -run 'Test(Estimate|Limiter|RetryPolicy|ClassifyFailure)'`; `go test -race ./internal/lib/limiter`; `./init.sh` | pass | Covers conservative token estimates, bounded concurrency, disabled rates, token budget rejection, cooldown, idempotent release, failure classes, backoff, full race tests, and vet. |
 | Harness validation | `validate-harness.mjs --target .` | pass | 100/100; all subsystems 5/5. |
 | Config and DTO tests | `go test ./internal/lib/configs ./internal/dto` | pass | Covers strict loading, defaults, source normalization, and annotation contracts. |
@@ -53,6 +65,8 @@
 
 ## Files Changed
 
+- `internal/facade/openai.go`, `internal/facade/openai_test.go`
+- `feature_list.json`, `progress.md`, `session-handoff.md`
 - `main.go`, `main_test.go`
 - `internal/dao/items.go`
 - `internal/service/exporter.go`, `exporter_test.go`
@@ -91,22 +105,25 @@
 - The CLI passes the same loaded result Schema to Validator and Runner, and passes `model.structured_output` without hard-coding a provider mode.
 - After the task identity is verified, import or runner errors still trigger export of already-terminal SQLite records before exit.
 - Final acceptance uses `deepseek-v4-pro` through the configured real gateway and must produce 50/50 valid output records.
+- The tested gateway mode is `json_object`; its `json_schema` response format was rejected with HTTP 400.
+- For this reasoning model, the accepted run raised `max_tokens` from 500 to 2000 after 500 caused empty-content length truncation.
 - Configuration resolves all task-relative paths before execution and rejects YAML unknown fields and client-managed `extra_body` keys.
 - SQLite stores canonical source hashes for idempotency while retaining raw source JSON; a changed `trace_id` source aborts and rolls back the entire import transaction.
 
 ## Blockers / Risks
 
-- Actual provider RPM/TPM and structured-output capability require real gateway verification.
-- Task 6 used only local `httptest` provider integration; final acceptance still requires all 50 real records.
+- Provider RPM/TPM remain undocumented; transient 429s occurred during acceptance even at concurrency 4 and were recovered by durable retries.
+- The design's approved formal first-batch starting point is concurrency 64, but quota should be confirmed first; absent confirmation, calibrate conservatively from 4 based on observed 429s.
+- OpenAI-compatible capability is provider-specific. Do not switch this task back to `json_schema` without a new state file and a fresh capability check.
 
 ## Next Session Startup
 
 1. Read `AGENTS.md` completely.
 2. Read the design specification.
 3. Read `feature_list.json` and `progress.md`.
-4. Run `./init.sh`.
-5. Run the real-model acceptance without printing the API Key value.
+4. Run `./init.sh` after any code or configuration change.
+5. Use a new task ID/state file when model semantics, structured-output mode, prompt, taxonomy, or Schema changes.
 
 ## Recommended Next Step
 
-- Complete `feat-006`: run the real 50-record CLI acceptance, validate output and failure invariants, and record final evidence.
+- Preserve the local acceptance artifacts outside Git. Before the first 30,000-record batch, confirm quota, choose a new task/state path, and calibrate concurrency while keeping payload-free logs.

@@ -3,12 +3,13 @@
 ## Current State
 
 **Last Updated:** 2026-08-06
-**Active Feature:** none; `feat-005` complete, `feat-006` is next
+**Active Feature:** none; `feat-001` through `feat-006` complete
 
 ## Status
 
 ### What's Done
 
+- [x] Completed `feat-006`: dependency/format cleanup, parser fuzz smoke, full Harness gate, real-gateway capability probe, auditable provider failures, and 50/50 real-model acceptance.
 - [x] Completed `feat-005`: ordered success/failure export, atomic file replacement, thin CLI wiring, safe progress, exit codes, and operator documentation.
 - [x] Completed `feat-004`: atomic SQLite item transitions, resumable bounded Runner, durable retries, format repair, shared cooldown, cancellation, and payload-free progress.
 - [x] Confirmed local single-process CLI scope.
@@ -27,16 +28,16 @@
 
 ### What's Next
 
-1. Start `feat-006`: full verification and final handoff.
-2. Run the required real-model 50-record acceptance from `模型配置.md` and `Test_Input.jsonl` without exposing the API Key.
-3. Validate output count, unique `trace_id` set equality, formal Schema conformance, and zero failed records.
+1. Preserve `Test_State.db` and `Test_Output.jsonl` as local acceptance artifacts; neither is committed.
+2. Before the first 30,000-record batch, confirm the provider's real rate limits and create a new task ID/state file for any semantic configuration change.
+3. Use `json_object` for this gateway and budget enough completion tokens for the model's reasoning before its final JSON.
 
 ## Blockers / Risks
 
-- [ ] The account concurrency limit is reported as approximately 500, but RPM and TPM are not yet known; runtime configuration must remain conservative and observable.
-- [ ] OpenAI-compatible providers differ in JSON Schema and rate-limit-header support; capability mode must be explicit in configuration.
-- [ ] The real gateway may differ in `json_schema` support; Task 7 must test it and use the approved `json_object` fallback only with captured incompatibility evidence.
-- [ ] Task 6 used only `httptest` provider integration; this is not the final real-model acceptance.
+- [ ] The account concurrency limit is reported as approximately 500, but real acceptance observed transient 429 responses at concurrency 16 and 4; RPM and TPM remain undocumented.
+- [x] This gateway rejected `json_schema` with HTTP 400 while accepting an otherwise equivalent `json_object` request with HTTP 200.
+- [ ] `deepseek-v4-pro` uses completion budget for reasoning; `max_tokens=500` produced `finish_reason=length` with empty content, while the accepted run used 2000.
+- [ ] The approved general first-batch baseline remains concurrency 64, but the observed 429s require quota confirmation or conservative calibration before using it.
 
 ## Decisions Made
 
@@ -49,9 +50,13 @@
 - Treat unnecessary code and abstractions as debt; keep the first release minimal and require concise Chinese Go comments.
 - Final completion requires a real DeepSeek gateway run over all 50 records; fake-provider integration tests are intermediate evidence only.
 - Configuration defaults follow the approved example: concurrency 64, shutdown timeout 30s, request attempts 5, format repairs 2, backoff 1s to 60s, explanation length 10 to 70, and model timeout 60s.
+- The real gateway acceptance uses `json_object`; `json_schema` was rejected by the provider.
+- The final 50-record run uses `max_tokens=2000` because audit metadata proved that 500 tokens could be exhausted by reasoning before final content.
 
 ## Files Modified This Session
 
+- `internal/facade/openai.go`, `openai_test.go` - Preserve bounded provider failure responses for SQLite audit on HTTP and malformed-completion errors.
+- `feature_list.json`, `progress.md`, `session-handoff.md` - Final verification status, real-model evidence, provider differences, and operator next actions.
 - `main.go`, `main_test.go` - Thin CLI assembly, safe exit mapping, structured-output propagation, resume failure export, and fake-provider integration tests.
 - `internal/dao/items.go` - Ordered streaming accessors for succeeded and failed export records.
 - `internal/service/exporter.go`, `exporter_test.go` - Deterministic merged JSONL export, safe failure JSONL, atomic staging, and failure preservation tests.
@@ -77,6 +82,12 @@
 
 ## Evidence Of Completion
 
+- [x] Task 7 dependency/format gate: `go mod tidy`, all-Go `gofmt`, and `git diff --check` passed without dependency version drift; direct/indirect requirements and necessary checksums were normalized.
+- [x] Task 7 parser fuzz: `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` passed with 6,693 executions.
+- [x] Task 7 audit RED/GREEN: `TestOpenAI_CompletePreservesAuditableFailureResponse` failed because HTTP/malformed failure bodies were dropped, then passed after bounded raw-response propagation; facade tests, race tests, and `./init.sh` passed.
+- [x] Task 7 real provider capability: `json_schema` returned HTTP 400 with a structured-output rejection; an otherwise equivalent `json_object` probe returned HTTP 200.
+- [x] Task 7 real E2E: compiled CLI with a fresh formal state, `json_object`, `max_tokens=2000`, and concurrency 4 exited 0 with added=50, skipped=0, succeeded=50, failed=0.
+- [x] Task 7 output acceptance: input=50, output=50, unique matching trace IDs=50, Schema/business-valid=50, `annotation.method=auto`=50, safe=34, unsafe=16, failed file=0, SQLite failed=0.
 - [x] Task 6 focused verification: `go test ./internal/service -run TestExport`, `go test . -run TestRun`, and `go test -race . ./internal/service` passed.
 - [x] Task 6 full gate: `./init.sh` passed formatting, all tests, full race tests, and `go vet ./...` on 2026-08-06.
 - [x] Mode wiring mutation check: hard-coding `json_schema` made `TestRunWiresConfiguredStructuredOutputMode` fail; restoring `cfg.Model.StructuredOutput` passed.
@@ -91,4 +102,4 @@
 
 ## Notes For Next Session
 
-Start `feat-006` from final verification and real 50-record acceptance. Task 6 fake-provider tests are intermediate evidence only.
+All Harness features are complete. Re-run `./init.sh` after any change. For a production batch, keep the API Key environment-only, use a new state file for semantic changes, and calibrate concurrency against observed 429s before adopting the approved concurrency-64 baseline.

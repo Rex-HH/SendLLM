@@ -45,8 +45,8 @@
       "name": "Full verification and handoff",
       "description": "Run formatting, unit/integration tests, race detection, vet, parser fuzz smoke checks, and record final evidence and residual risks.",
       "dependencies": ["feat-005"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-06: `go mod tidy`, 全量 `gofmt`, `git diff --check`, 5 秒 `FuzzParseJSONL` 和 `./init.sh` 通过。真实网关拒绝 `json_schema`（HTTP 400），对照接受 `json_object`（HTTP 200）；修复失败响应审计后，使用全新正式状态、`json_object`、`max_tokens=2000`、并发 4 的真实 CLI exit 0，added=50、succeeded=50、failed=0。正式 Schema、`service.Validator`、trace_id 集合、annotation.method 和 SQLite 终态独立校验全部 50/50 通过。"
     }
   ]
 }
