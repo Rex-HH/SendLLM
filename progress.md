@@ -56,6 +56,8 @@
 
 ## Files Modified This Session
 
+- `internal/service/live_acceptance_test.go` - Tracked opt-in acceptance test for existing local artifacts; it never calls the model and reports aggregate counts only.
+- `feature_list.json`, `progress.md`, `session-handoff.md` - Review round 2 reproducibility and verification evidence only.
 - `internal/facade/openai.go`, `openai_test.go` - Preserve bounded provider failure responses for SQLite audit on HTTP and malformed-completion errors.
 - `feature_list.json`, `progress.md`, `session-handoff.md` - Final verification status, real-model evidence, provider differences, and operator next actions.
 - `main.go`, `main_test.go` - Thin CLI assembly, safe exit mapping, structured-output propagation, resume failure export, and fake-provider integration tests.
@@ -90,7 +92,10 @@
 - [x] Task 7 audit RED/GREEN: `go test ./internal/facade -run '^TestOpenAI_CompletePreservesAuditableFailureResponse$' -v` first exited 1 because both synthetic HTTP 400 and malformed HTTP 200 cases returned empty `RawResponse`; the same command exited 0 after bounded response propagation. Facade tests, race tests, and `./init.sh` passed.
 - [x] Task 7 real provider capability: `json_schema` returned HTTP 400 with a structured-output rejection; an otherwise equivalent `json_object` probe returned HTTP 200.
 - [x] Task 7 real E2E: `zsh -lic 'exec /private/tmp/sendllm-task7-final -config /private/tmp/sendllm-task7-final.yaml'` used a fresh formal state, `json_object`, `max_tokens=2000`, and concurrency 4; exit 0, stdout `added=50 skipped=0 succeeded=50 failed=0`.
-- [x] Task 7 output acceptance: `go run .superpowers/sdd/2026-08-05-sendllm-implementation/task-7-verify/main.go -config /private/tmp/sendllm-task7-final.yaml -input /Users/lijiayang/venus/SendLLM/Test_Input.jsonl -output /Users/lijiayang/venus/SendLLM/Test_Output.jsonl -state /Users/lijiayang/venus/SendLLM/Test_State.db -task-id sendllm-task7-real-final-20260806` exited 0; stdout `validation=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`.
+- [x] Task 7 output acceptance: `SENDLLM_LIVE_CONFIG="$PWD/config/task.example.yaml" SENDLLM_LIVE_INPUT=/Users/lijiayang/venus/SendLLM/Test_Input.jsonl SENDLLM_LIVE_OUTPUT=/Users/lijiayang/venus/SendLLM/Test_Output.jsonl SENDLLM_LIVE_STATE=/Users/lijiayang/venus/SendLLM/Test_State.db SENDLLM_LIVE_TASK_ID=sendllm-task7-real-final-20260806 go test ./internal/service -run '^TestLiveAcceptance$' -count=1 -v` exited 0; stdout `live_acceptance=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`.
+- [x] Task 7 acceptance-test behavior: `go test ./internal/service -run '^TestLiveAcceptance$' -count=1 -v` exited 0 and skipped when artifact paths were unset. Temporarily changing `expectedLiveItems` from 50 to 51 made the exact live command exit 1 while every actual count remained 50; restoring 50 made it exit 0.
+- [x] Review round 1 closeout: after commit `506da53`, `git status --short` exited 0 with empty stdout; `git log --oneline -8` exited 0 and was headed by `506da53`, `2ba55c7`, `656a0df`, `6a9f3aa`, `f504d0b`, `7ea4821`, `61401d5`, and `01ef1ec`.
+- [x] Review round 2 scope: only the tracked acceptance test and its durable evidence are added; production behavior and the accepted local artifacts are unchanged.
 - [x] Task 7 security gate: `rg -n 'Bearer |api[_-]?key|authorization|prompt.*slog|response.*slog' --glob '*.go' --glob '*.yaml' --glob '*.md' .` exited 0; sanitized review found 23 expected protocol/env/test/evidence lines, 0 credential values, and 0 payload-logging code paths. `rg -n 'ListenAndServe|redis|kafka|RabbitMQ|message[ _-]?queue|cron' --glob '*.go' .` exited 1 with no out-of-scope matches.
 - [x] Task 6 focused verification: `go test ./internal/service -run TestExport`, `go test . -run TestRun`, and `go test -race . ./internal/service` passed.
 - [x] Task 6 full gate: `./init.sh` passed formatting, all tests, full race tests, and `go vet ./...` on 2026-08-06.

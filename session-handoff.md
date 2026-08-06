@@ -8,7 +8,7 @@
 
 - Goal: Build a resumable local Go CLI that labels approximately 30,000 safety samples through an OpenAI-compatible LLM API.
 - Current status: first-release implementation and final acceptance are complete.
-- Branch / commit: `feature/sendllm-implementation`; Task 7 started from `656a0df`.
+- Branch / commit: `feature/sendllm-implementation`; review round 2 started from `506da53`.
 
 ## Completed This Session
 
@@ -18,6 +18,8 @@
 - [x] Diagnosed `max_tokens=500` failures from safe metadata: valid envelopes ended with `finish_reason=length`, zero content, and 500 completion tokens.
 - [x] Completed the compiled real CLI run with a fresh formal state, `json_object`, `max_tokens=2000`, concurrency 4, and 50 succeeded / 0 failed.
 - [x] Independently validated all 50 outputs with the formal Schema and production `service.Validator`, exact unique trace ID equality, automatic annotation metadata, and zero failed state records.
+- [x] Replaced the ignored one-off verifier with a tracked, opt-in `TestLiveAcceptance` that validates existing artifacts without calling the model or printing payloads.
+- [x] Kept review round 2 limited to the acceptance test and durable evidence; production behavior is unchanged.
 - [x] Resolved product scope and data contract.
 - [x] Selected SQLite-backed architecture.
 - [x] Designed concurrency, retry, validation, and export behavior.
@@ -50,7 +52,9 @@
 | Real capability check | compiled client against the configured gateway in `json_schema` and `json_object` modes | fallback confirmed | `json_schema` returned HTTP 400 structured-output rejection; equivalent `json_object` returned HTTP 200. |
 | Pinned real config | `zsh -lic 'test -n "$AI_GATEWAY_API_KEY"'` | pass, exit 0 | `base_url=https://aigateway.venusgroup.com.cn/ai/deepseek/openai`; `model=deepseek-v4-pro`; `api_key_env=AI_GATEWAY_API_KEY`; no Key value printed. |
 | Real 50-record CLI | `zsh -lic 'exec /private/tmp/sendllm-task7-final -config /private/tmp/sendllm-task7-final.yaml'` | pass, exit 0 | Count-only stdout: `added=50 skipped=0 succeeded=50 failed=0`; fresh formal state, `json_object`, max tokens 2000, concurrency 4. |
-| Real output integrity | `go run .superpowers/sdd/2026-08-05-sendllm-implementation/task-7-verify/main.go -config /private/tmp/sendllm-task7-final.yaml -input /Users/lijiayang/venus/SendLLM/Test_Input.jsonl -output /Users/lijiayang/venus/SendLLM/Test_Output.jsonl -state /Users/lijiayang/venus/SendLLM/Test_State.db -task-id sendllm-task7-real-final-20260806` | pass, exit 0 | `validation=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`. |
+| Real output integrity | `SENDLLM_LIVE_CONFIG="$PWD/config/task.example.yaml" SENDLLM_LIVE_INPUT=/Users/lijiayang/venus/SendLLM/Test_Input.jsonl SENDLLM_LIVE_OUTPUT=/Users/lijiayang/venus/SendLLM/Test_Output.jsonl SENDLLM_LIVE_STATE=/Users/lijiayang/venus/SendLLM/Test_State.db SENDLLM_LIVE_TASK_ID=sendllm-task7-real-final-20260806 go test ./internal/service -run '^TestLiveAcceptance$' -count=1 -v` | pass, exit 0 | Count-only stdout: `live_acceptance=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`. No model call was made. |
+| Acceptance harness | `go test ./internal/service -run '^TestLiveAcceptance$' -count=1 -v`; exact live command with temporary expected count 51; restored exact live command | SKIP exit 0; RED exit 1; GREEN exit 0 | Default gate is credential-free. RED showed every actual count remained 50 and failed/state counts remained 0; restoring the tracked expectation to 50 passed. |
+| Review round 1 closeout | `git status --short`; `git log --oneline -8` after `506da53` | pass, exit 0 | Status stdout was empty; log was headed by `506da53`, then `2ba55c7`, `656a0df`, `6a9f3aa`, `f504d0b`, `7ea4821`, `61401d5`, `01ef1ec`. |
 | Security and scope | `rg -n 'Bearer |api[_-]?key|authorization|prompt.*slog|response.*slog' --glob '*.go' --glob '*.yaml' --glob '*.md' .`; `rg -n 'ListenAndServe|redis|kafka|RabbitMQ|message[ _-]?queue|cron' --glob '*.go' .` | reviewed | 23 expected protocol/env/test/evidence lines; credential values 0; payload-logging paths 0; out-of-scope Go matches 0. |
 | Task 4 foundation | `go test ./internal/lib/tokenizer ./internal/lib/limiter ./internal/service -run 'Test(Estimate|Limiter|RetryPolicy|ClassifyFailure)'`; `go test -race ./internal/lib/limiter`; `./init.sh` | pass | Covers conservative token estimates, bounded concurrency, disabled rates, token budget rejection, cooldown, idempotent release, failure classes, backoff, full race tests, and vet. |
 | Harness validation | `validate-harness.mjs --target .` | pass | 100/100; all subsystems 5/5. |
