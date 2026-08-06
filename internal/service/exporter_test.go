@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,6 +175,214 @@ func TestExportAtomicallyReplacesOrPreservesExistingFiles(t *testing.T) {
 		}
 		assertNoExportTemps(t, directory)
 	})
+
+	t.Run("restores old files when second publish fails", func(t *testing.T) {
+		store, ctx, directory, outputPath, failedPath := prepareExportPublish(t)
+		writeOldExportFiles(t, outputPath, failedPath)
+		publishErr := errors.New("synthetic second publish failure")
+		rename := failSecondExportPublish(publishErr)
+
+		_, err := service.ExportWithFileOpsForTest(ctx, store, "task-1", outputPath, service.ExportFileOpsForTest{
+			Rename: rename,
+		})
+		if !errors.Is(err, publishErr) {
+			t.Fatalf("Export() error = %v, want %v", err, publishErr)
+		}
+		if got := readFile(t, outputPath); got != "old success\n" {
+			t.Errorf("success file = %q, want old content", got)
+		}
+		if got := readFile(t, failedPath); got != "old failure\n" {
+			t.Errorf("failed file = %q, want old content", got)
+		}
+		assertNoExportTemps(t, directory)
+	})
+
+	t.Run("removes new files when old targets did not exist", func(t *testing.T) {
+		store, ctx, directory, outputPath, failedPath := prepareExportPublish(t)
+		publishErr := errors.New("synthetic second publish failure")
+		rename := failSecondExportPublish(publishErr)
+
+		_, err := service.ExportWithFileOpsForTest(ctx, store, "task-1", outputPath, service.ExportFileOpsForTest{
+			Rename: rename,
+		})
+		if !errors.Is(err, publishErr) {
+			t.Fatalf("Export() error = %v, want %v", err, publishErr)
+		}
+		for _, path := range []string{outputPath, failedPath} {
+			if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("Lstat(%q) error = %v, want not exist", path, err)
+			}
+		}
+		assertNoExportTemps(t, directory)
+	})
+
+	t.Run("joins publish and restore failures", func(t *testing.T) {
+		store, ctx, _, outputPath, failedPath := prepareExportPublish(t)
+		writeOldExportFiles(t, outputPath, failedPath)
+		publishErr := errors.New("synthetic second publish failure")
+		restoreErr := errors.New("synthetic restore failure")
+		publishRename := failSecondExportPublish(publishErr)
+		rename := func(oldPath, newPath string) error {
+			if strings.HasPrefix(filepath.Base(filepath.Dir(oldPath)), ".sendllm-export-backup-") &&
+				newPath == outputPath {
+				return restoreErr
+			}
+			return publishRename(oldPath, newPath)
+		}
+
+		_, err := service.ExportWithFileOpsForTest(ctx, store, "task-1", outputPath, service.ExportFileOpsForTest{
+			Rename: rename,
+		})
+		if !errors.Is(err, publishErr) || !errors.Is(err, restoreErr) {
+			t.Fatalf("Export() error = %v, want joined publish and restore errors", err)
+		}
+	})
+
+	t.Run("keeps formal paths while preparing backups", func(t *testing.T) {
+		store, ctx, _, outputPath, failedPath := prepareExportPublish(t)
+		writeOldExportFiles(t, outputPath, failedPath)
+		publishErr := errors.New("stop at first publish")
+		rename := func(oldPath, newPath string) error {
+			if strings.HasPrefix(filepath.Base(oldPath), ".sendllm-export-") {
+				if got := readFile(t, outputPath); got != "old success\n" {
+					t.Errorf("success file before publish = %q, want old content", got)
+				}
+				if got := readFile(t, failedPath); got != "old failure\n" {
+					t.Errorf("failed file before publish = %q, want old content", got)
+				}
+				return publishErr
+			}
+			return os.Rename(oldPath, newPath)
+		}
+
+		_, err := service.ExportWithFileOpsForTest(ctx, store, "task-1", outputPath, service.ExportFileOpsForTest{
+			Rename: rename,
+		})
+		if !errors.Is(err, publishErr) {
+			t.Fatalf("Export() error = %v, want %v", err, publishErr)
+		}
+	})
+
+	t.Run("preserves old files when backup creation fails", func(t *testing.T) {
+		store, ctx, directory, outputPath, failedPath := prepareExportPublish(t)
+		writeOldExportFiles(t, outputPath, failedPath)
+		backupErr := errors.New("synthetic backup failure")
+
+		_, err := service.ExportWithFileOpsForTest(ctx, store, "task-1", outputPath, service.ExportFileOpsForTest{
+			Link: func(oldPath, newPath string) error {
+				if oldPath == outputPath {
+					return backupErr
+				}
+				return os.Link(oldPath, newPath)
+			},
+			Open: func(path string) (*os.File, error) {
+				if path == outputPath {
+					return nil, backupErr
+				}
+				return os.Open(path)
+			},
+		})
+		if !errors.Is(err, backupErr) {
+			t.Fatalf("Export() error = %v, want %v", err, backupErr)
+		}
+		if got := readFile(t, outputPath); got != "old success\n" {
+			t.Errorf("success file = %q, want old content", got)
+		}
+		if got := readFile(t, failedPath); got != "old failure\n" {
+			t.Errorf("failed file = %q, want old content", got)
+		}
+		assertNoExportTemps(t, directory)
+	})
+
+	t.Run("copies backups when hard links are unavailable", func(t *testing.T) {
+		store, ctx, directory, outputPath, failedPath := prepareExportPublish(t)
+		writeOldExportFiles(t, outputPath, failedPath)
+
+		if _, err := service.ExportWithFileOpsForTest(ctx, store, "task-1", outputPath, service.ExportFileOpsForTest{
+			Link: func(string, string) error {
+				return errors.New("synthetic unsupported hard link")
+			},
+		}); err != nil {
+			t.Fatalf("Export() error = %v", err)
+		}
+		if got := readFile(t, outputPath); got == "old success\n" {
+			t.Error("success file was not replaced")
+		}
+		if got := readFile(t, failedPath); got != "" {
+			t.Errorf("failed file = %q, want empty replacement", got)
+		}
+		assertNoExportTemps(t, directory)
+	})
+
+	t.Run("keeps committed files when backup cleanup partially fails", func(t *testing.T) {
+		store, ctx, _, outputPath, failedPath := prepareExportPublish(t)
+		writeOldExportFiles(t, outputPath, failedPath)
+		cleanupErr := errors.New("synthetic partial cleanup failure")
+		renameCount := 0
+
+		stats, err := service.ExportWithFileOpsForTest(ctx, store, "task-1", outputPath, service.ExportFileOpsForTest{
+			Rename: func(oldPath, newPath string) error {
+				renameCount++
+				return os.Rename(oldPath, newPath)
+			},
+			RemoveAll: func(backupDir string) error {
+				if err := os.Remove(filepath.Join(backupDir, "succeeded")); err != nil {
+					t.Fatalf("remove first backup: %v", err)
+				}
+				return cleanupErr
+			},
+		})
+		if !errors.Is(err, cleanupErr) {
+			t.Fatalf("Export() error = %v, want %v", err, cleanupErr)
+		}
+		if stats != (service.ExportStats{}) {
+			t.Errorf("Export() stats = %+v, want zero stats on cleanup error", stats)
+		}
+		if got := readFile(t, outputPath); got == "old success\n" {
+			t.Error("success file rolled back after commit")
+		}
+		if got := readFile(t, failedPath); got != "" {
+			t.Errorf("failed file = %q, want committed empty snapshot", got)
+		}
+		if renameCount != 2 {
+			t.Errorf("Rename() calls = %d, want two publish calls only", renameCount)
+		}
+	})
+}
+
+func prepareExportPublish(t *testing.T) (*dao.Store, context.Context, string, string, string) {
+	t.Helper()
+	store := openTestStore(t)
+	ctx := context.Background()
+	ensureTask(t, store, ctx)
+	seedExportItems(t, store, ctx, dao.Item{
+		TaskID:     "task-1",
+		TraceID:    "success",
+		InputIndex: 1,
+		RawJSON:    []byte(`{"trace_id":"success","prompt":"synthetic prompt"}`),
+		Prompt:     "synthetic prompt",
+		State:      dao.ItemPending,
+	})
+	claimExportItems(t, store, ctx, 1)
+	markExportSucceeded(t, store, ctx, "success", 1, 0,
+		`{"label":"safe","explanation":"synthetic safe explanation"}`,
+	)
+	directory := t.TempDir()
+	outputPath := filepath.Join(directory, "result.jsonl")
+	return store, ctx, directory, outputPath, filepath.Join(directory, "result.failed.jsonl")
+}
+
+func failSecondExportPublish(publishErr error) func(string, string) error {
+	publishCount := 0
+	return func(oldPath, newPath string) error {
+		if strings.HasPrefix(filepath.Base(oldPath), ".sendllm-export-") {
+			publishCount++
+			if publishCount == 2 {
+				return publishErr
+			}
+		}
+		return os.Rename(oldPath, newPath)
+	}
 }
 
 func seedExportItems(t *testing.T, store *dao.Store, ctx context.Context, items ...dao.Item) {
