@@ -38,8 +38,22 @@ type RunnerConfig struct {
 
 // Runner 协调可恢复领取、模型调用和持久化状态迁移。
 type Runner struct {
-	cfg RunnerConfig
+	cfg   RunnerConfig
+	store runnerStore
 }
+
+type runnerStore interface {
+	ResetProcessing(context.Context, string) (int64, error)
+	Counts(context.Context, string) (dao.Counts, error)
+	Claim(context.Context, string, int, time.Time) ([]dao.Item, error)
+	RecordAttempt(context.Context, string, string, dao.Attempt) error
+	ScheduleRetry(context.Context, string, string, dao.Attempt, time.Time, string, string) error
+	MarkFailed(context.Context, string, string, dao.Attempt, string, string) error
+	MarkSucceeded(context.Context, string, string, dao.Attempt, []byte) error
+	NextRetryAt(context.Context, string) (time.Time, bool, error)
+}
+
+var _ runnerStore = (*dao.Store)(nil)
 
 type workerResult struct {
 	err error
@@ -75,15 +89,15 @@ func NewRunner(cfg RunnerConfig) (*Runner, error) {
 	}
 	cfg.SystemPrompt = append([]byte(nil), cfg.SystemPrompt...)
 	cfg.Schema = append(json.RawMessage(nil), cfg.Schema...)
-	return &Runner{cfg: cfg}, nil
+	return &Runner{cfg: cfg, store: cfg.Store}, nil
 }
 
 // Run 恢复遗留状态并运行到全部记录终态、取消或任务级错误。
 func (r *Runner) Run(ctx context.Context) (Summary, error) {
-	if _, err := r.cfg.Store.ResetProcessing(ctx, r.cfg.TaskID); err != nil {
+	if _, err := r.store.ResetProcessing(ctx, r.cfg.TaskID); err != nil {
 		return Summary{}, fmt.Errorf("reset interrupted task: %w", err)
 	}
-	initialCounts, err := r.cfg.Store.Counts(ctx, r.cfg.TaskID)
+	initialCounts, err := r.store.Counts(ctx, r.cfg.TaskID)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -170,7 +184,7 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 			continue
 		}
 
-		counts, err := r.cfg.Store.Counts(runCtx, r.cfg.TaskID)
+		counts, err := r.store.Counts(runCtx, r.cfg.TaskID)
 		if err != nil {
 			countsErr := runContextError(runCtx, err)
 			shutdown()
@@ -183,14 +197,15 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 			return summary, nil
 		}
 		if err := r.waitForRetry(runCtx); err != nil {
+			retryErr := runContextError(runCtx, err)
 			shutdown()
-			return Summary{}, err
+			return Summary{}, retryErr
 		}
 	}
 }
 
 func (r *Runner) claim(ctx context.Context, limit int, now time.Time) ([]dao.Item, error) {
-	items, err := r.cfg.Store.Claim(ctx, r.cfg.TaskID, limit, now)
+	items, err := r.store.Claim(ctx, r.cfg.TaskID, limit, now)
 	if err != nil {
 		return nil, runContextError(ctx, err)
 	}
@@ -246,7 +261,7 @@ func (r *Runner) processItem(ctx context.Context, item dao.Item) error {
 	if item.RepairAttempts >= r.cfg.FormatRepairAttempts {
 		return r.finishInvalidResult(ctx, item, attempt, requestNumber)
 	}
-	if err := r.cfg.Store.RecordAttempt(ctx, r.cfg.TaskID, item.TraceID, attempt); err != nil {
+	if err := r.store.RecordAttempt(ctx, r.cfg.TaskID, item.TraceID, attempt); err != nil {
 		return err
 	}
 	return r.repair(ctx, item, response.Content, validationErr, requestNumber)
@@ -276,7 +291,7 @@ func (r *Runner) repair(
 		if repairNumber == r.cfg.FormatRepairAttempts {
 			return r.finishInvalidResult(ctx, item, attempt, requestNumber)
 		}
-		if err := r.cfg.Store.RecordAttempt(ctx, r.cfg.TaskID, item.TraceID, attempt); err != nil {
+		if err := r.store.RecordAttempt(ctx, r.cfg.TaskID, item.TraceID, attempt); err != nil {
 			return err
 		}
 		invalidResponse = response.Content
@@ -302,7 +317,7 @@ func (r *Runner) handleCallFailure(
 	attempt.ErrorCategory = decision.Category
 	attempt.Retryable = decision.Retry
 	if isTaskLevelFailure(callErr) {
-		if err := r.cfg.Store.RecordAttempt(ctx, r.cfg.TaskID, item.TraceID, attempt); err != nil {
+		if err := r.store.RecordAttempt(ctx, r.cfg.TaskID, item.TraceID, attempt); err != nil {
 			return err
 		}
 		return fmt.Errorf("task-level model failure: %w", callErr)
@@ -315,7 +330,7 @@ func (r *Runner) handleCallFailure(
 		r.cfg.Limiter.Cooldown(time.Now().Add(delay))
 	}
 	if decision.Retry && requestNumber < r.cfg.RequestMaxAttempts {
-		return r.cfg.Store.ScheduleRetry(
+		return r.store.ScheduleRetry(
 			ctx,
 			r.cfg.TaskID,
 			item.TraceID,
@@ -325,7 +340,7 @@ func (r *Runner) handleCallFailure(
 			"provider request failed",
 		)
 	}
-	return r.cfg.Store.MarkFailed(
+	return r.store.MarkFailed(
 		ctx,
 		r.cfg.TaskID,
 		item.TraceID,
@@ -343,7 +358,7 @@ func (r *Runner) finishInvalidResult(
 ) error {
 	if requestNumber < r.cfg.RequestMaxAttempts {
 		delay := r.cfg.RetryPolicy.Delay(requestNumber, 0, r.cfg.Jitter)
-		return r.cfg.Store.ScheduleRetry(
+		return r.store.ScheduleRetry(
 			ctx,
 			r.cfg.TaskID,
 			item.TraceID,
@@ -353,7 +368,7 @@ func (r *Runner) finishInvalidResult(
 			"model result validation failed",
 		)
 	}
-	return r.cfg.Store.MarkFailed(
+	return r.store.MarkFailed(
 		ctx,
 		r.cfg.TaskID,
 		item.TraceID,
@@ -445,11 +460,11 @@ func (r *Runner) markSucceeded(
 	if err != nil {
 		return fmt.Errorf("encode annotation for trace_id %q: %w", item.TraceID, err)
 	}
-	return r.cfg.Store.MarkSucceeded(ctx, r.cfg.TaskID, item.TraceID, attempt, encoded)
+	return r.store.MarkSucceeded(ctx, r.cfg.TaskID, item.TraceID, attempt, encoded)
 }
 
 func (r *Runner) reportProgress(ctx context.Context, tracker progressTracker) error {
-	counts, err := r.cfg.Store.Counts(ctx, r.cfg.TaskID)
+	counts, err := r.store.Counts(ctx, r.cfg.TaskID)
 	if err != nil {
 		return runContextError(ctx, err)
 	}
@@ -465,9 +480,9 @@ func runContextError(ctx context.Context, err error) error {
 }
 
 func (r *Runner) waitForRetry(ctx context.Context) error {
-	next, ok, err := r.cfg.Store.NextRetryAt(ctx, r.cfg.TaskID)
+	next, ok, err := r.store.NextRetryAt(ctx, r.cfg.TaskID)
 	if err != nil {
-		return runContextError(ctx, err)
+		return err
 	}
 	if !ok {
 		return errors.New("runner has unfinished items without active workers or retry schedule")
@@ -480,7 +495,7 @@ func (r *Runner) waitForRetry(ctx context.Context) error {
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
-		return context.Cause(ctx)
+		return ctx.Err()
 	case <-timer.C:
 		return nil
 	}
