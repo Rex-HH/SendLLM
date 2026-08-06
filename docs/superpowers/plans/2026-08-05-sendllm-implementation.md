@@ -710,6 +710,7 @@ type RunnerConfig struct {
   SystemPrompt         []byte
   Scene                string
   Schema               json.RawMessage
+  Mode                 string // 来自 model.structured_output
   MaxOutputTokens      int
   RequestMaxAttempts   int
   FormatRepairAttempts int

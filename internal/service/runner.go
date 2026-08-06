@@ -23,6 +23,7 @@ type RunnerConfig struct {
 	SystemPrompt         []byte
 	Scene                string
 	Schema               json.RawMessage
+	Mode                 string
 	MaxOutputTokens      int
 	RequestMaxAttempts   int
 	FormatRepairAttempts int
@@ -58,6 +59,11 @@ func NewRunner(cfg RunnerConfig) (*Runner, error) {
 	if cfg.Store == nil || cfg.Completer == nil || cfg.Validator == nil || cfg.Limiter == nil {
 		return nil, errors.New("runner requires store, completer, validator, and limiter")
 	}
+	switch cfg.Mode {
+	case "json_schema", "json_object", "prompt_only":
+	default:
+		return nil, errors.New("runner completion mode is invalid")
+	}
 	if cfg.MaxOutputTokens < 1 || cfg.RequestMaxAttempts < 1 || cfg.FormatRepairAttempts < 0 {
 		return nil, errors.New("runner attempt and token limits are invalid")
 	}
@@ -82,7 +88,7 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 		return Summary{}, err
 	}
 	tracker := newProgressTracker(time.Now(), initialCounts)
-	runCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := context.WithCancelCause(ctx)
 	jobs := make(chan dao.Item)
 	results := make(chan workerResult)
 	var workers sync.WaitGroup
@@ -91,21 +97,21 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 	for range workerCount {
 		go func() {
 			defer workers.Done()
-			r.worker(runCtx, jobs, results)
+			r.worker(runCtx, cancel, jobs, results)
 		}()
 	}
 	shutdown := func() {
-		cancel()
+		cancel(nil)
 		close(jobs)
 		workers.Wait()
 	}
-	defer cancel()
+	defer cancel(nil)
 
 	active := 0
 	for {
-		if err := ctx.Err(); err != nil {
+		if err := runCtx.Err(); err != nil {
 			shutdown()
-			return Summary{}, err
+			return Summary{}, context.Cause(runCtx)
 		}
 
 		capacity := workerCount - active
@@ -132,9 +138,9 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 							shutdown()
 							return Summary{}, err
 						}
-					case <-ctx.Done():
+					case <-runCtx.Done():
 						shutdown()
-						return Summary{}, ctx.Err()
+						return Summary{}, context.Cause(runCtx)
 					}
 				}
 			}
@@ -155,9 +161,9 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 					shutdown()
 					return Summary{}, err
 				}
-			case <-ctx.Done():
+			case <-runCtx.Done():
 				shutdown()
-				return Summary{}, ctx.Err()
+				return Summary{}, context.Cause(runCtx)
 			}
 			continue
 		}
@@ -180,7 +186,12 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 	}
 }
 
-func (r *Runner) worker(ctx context.Context, jobs <-chan dao.Item, results chan<- workerResult) {
+func (r *Runner) worker(
+	ctx context.Context,
+	cancel context.CancelCauseFunc,
+	jobs <-chan dao.Item,
+	results chan<- workerResult,
+) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -189,7 +200,14 @@ func (r *Runner) worker(ctx context.Context, jobs <-chan dao.Item, results chan<
 			if !ok {
 				return
 			}
+			if ctx.Err() != nil {
+				return
+			}
 			err := r.processItem(ctx, item)
+			if isTaskLevelRunError(err) {
+				cancel(err)
+				return
+			}
 			select {
 			case results <- workerResult{err: err}:
 			case <-ctx.Done():
@@ -278,11 +296,14 @@ func (r *Runner) handleCallFailure(
 		}
 		return fmt.Errorf("task-level model failure: %w", callErr)
 	}
+	var delay time.Duration
+	if decision.Retry {
+		delay = r.cfg.RetryPolicy.Delay(requestNumber, decision.RetryAfter, r.cfg.Jitter)
+	}
+	if decision.GlobalCooldown {
+		r.cfg.Limiter.Cooldown(time.Now().Add(delay))
+	}
 	if decision.Retry && requestNumber < r.cfg.RequestMaxAttempts {
-		delay := r.cfg.RetryPolicy.Delay(requestNumber, decision.RetryAfter, r.cfg.Jitter)
-		if decision.GlobalCooldown {
-			r.cfg.Limiter.Cooldown(time.Now().Add(delay))
-		}
 		return r.cfg.Store.ScheduleRetry(
 			ctx,
 			r.cfg.TaskID,
@@ -379,7 +400,7 @@ func (r *Runner) classificationRequest(item dao.Item) (dto.CompletionRequest, er
 			{Role: "user", Content: string(encoded)},
 		},
 		Schema: append(json.RawMessage(nil), r.cfg.Schema...),
-		Mode:   "json_schema",
+		Mode:   r.cfg.Mode,
 	}, nil
 }
 
@@ -399,7 +420,7 @@ func (r *Runner) repairRequest(invalidResponse []byte, problems []string) (dto.C
 			{Role: "user", Content: string(encoded)},
 		},
 		Schema: append(json.RawMessage(nil), r.cfg.Schema...),
-		Mode:   "json_schema",
+		Mode:   r.cfg.Mode,
 	}, nil
 }
 
@@ -467,6 +488,10 @@ func isTaskLevelFailure(err error) bool {
 		return false
 	}
 	return providerErr.Kind == dto.ProviderAuthentication || providerErr.Kind == dto.ProviderBadRequest
+}
+
+func isTaskLevelRunError(err error) bool {
+	return isTaskLevelFailure(err) || errors.Is(err, limiter.ErrTokenBudgetExceeded)
 }
 
 func fullJitter(limit time.Duration) time.Duration {
