@@ -116,7 +116,7 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 
 		capacity := workerCount - active
 		if capacity > 0 {
-			claimed, err := r.cfg.Store.Claim(runCtx, r.cfg.TaskID, capacity, time.Now())
+			claimed, err := r.claim(runCtx, capacity, time.Now())
 			if err != nil {
 				shutdown()
 				return Summary{}, err
@@ -131,8 +131,9 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 					case result := <-results:
 						active--
 						if result.err != nil {
+							resultErr := runContextError(runCtx, result.err)
 							shutdown()
-							return Summary{}, result.err
+							return Summary{}, resultErr
 						}
 						if err := r.reportProgress(runCtx, tracker); err != nil {
 							shutdown()
@@ -154,8 +155,9 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 			case result := <-results:
 				active--
 				if result.err != nil {
+					resultErr := runContextError(runCtx, result.err)
 					shutdown()
-					return Summary{}, result.err
+					return Summary{}, resultErr
 				}
 				if err := r.reportProgress(runCtx, tracker); err != nil {
 					shutdown()
@@ -170,8 +172,9 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 
 		counts, err := r.cfg.Store.Counts(runCtx, r.cfg.TaskID)
 		if err != nil {
+			countsErr := runContextError(runCtx, err)
 			shutdown()
-			return Summary{}, err
+			return Summary{}, countsErr
 		}
 		if counts.Pending == 0 && counts.Processing == 0 && counts.RetryWait == 0 {
 			shutdown()
@@ -184,6 +187,14 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 			return Summary{}, err
 		}
 	}
+}
+
+func (r *Runner) claim(ctx context.Context, limit int, now time.Time) ([]dao.Item, error) {
+	items, err := r.cfg.Store.Claim(ctx, r.cfg.TaskID, limit, now)
+	if err != nil {
+		return nil, runContextError(ctx, err)
+	}
+	return items, nil
 }
 
 func (r *Runner) worker(
@@ -440,16 +451,23 @@ func (r *Runner) markSucceeded(
 func (r *Runner) reportProgress(ctx context.Context, tracker progressTracker) error {
 	counts, err := r.cfg.Store.Counts(ctx, r.cfg.TaskID)
 	if err != nil {
-		return err
+		return runContextError(ctx, err)
 	}
 	r.cfg.OnProgress(tracker.summary(time.Now(), counts))
 	return nil
 }
 
+func runContextError(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	return err
+}
+
 func (r *Runner) waitForRetry(ctx context.Context) error {
 	next, ok, err := r.cfg.Store.NextRetryAt(ctx, r.cfg.TaskID)
 	if err != nil {
-		return err
+		return runContextError(ctx, err)
 	}
 	if !ok {
 		return errors.New("runner has unfinished items without active workers or retry schedule")
@@ -462,7 +480,7 @@ func (r *Runner) waitForRetry(ctx context.Context) error {
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return context.Cause(ctx)
 	case <-timer.C:
 		return nil
 	}
