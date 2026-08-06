@@ -236,6 +236,25 @@ func TestExportAtomicallyReplacesOrPreservesExistingFiles(t *testing.T) {
 		if !errors.Is(err, publishErr) || !errors.Is(err, restoreErr) {
 			t.Fatalf("Export() error = %v, want joined publish and restore errors", err)
 		}
+		if _, err := os.Lstat(outputPath); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("Lstat(success) error = %v, want not exist after failed restore", err)
+		}
+		if got := readFile(t, failedPath); got != "old failure\n" {
+			t.Errorf("failed file = %q, want old content at formal path", got)
+		}
+		backupDirs, err := filepath.Glob(filepath.Join(filepath.Dir(outputPath), ".sendllm-export-backup-*"))
+		if err != nil {
+			t.Fatalf("Glob(export backups) error = %v", err)
+		}
+		if len(backupDirs) != 1 {
+			t.Fatalf("export backup directories = %v, want one", backupDirs)
+		}
+		if got := readFile(t, filepath.Join(backupDirs[0], "succeeded")); got != "old success\n" {
+			t.Errorf("success backup = %q, want old content", got)
+		}
+		if _, err := os.Lstat(filepath.Join(backupDirs[0], "failed")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("Lstat(failed backup) error = %v, want old failure only at formal path", err)
+		}
 	})
 
 	t.Run("keeps formal paths while preparing backups", func(t *testing.T) {
@@ -310,6 +329,29 @@ func TestExportAtomicallyReplacesOrPreservesExistingFiles(t *testing.T) {
 		}
 		if got := readFile(t, failedPath); got != "" {
 			t.Errorf("failed file = %q, want empty replacement", got)
+		}
+		assertNoExportTemps(t, directory)
+	})
+
+	t.Run("restores copied backups when second publish fails", func(t *testing.T) {
+		store, ctx, directory, outputPath, failedPath := prepareExportPublish(t)
+		writeOldExportFiles(t, outputPath, failedPath)
+		publishErr := errors.New("synthetic second publish failure")
+
+		_, err := service.ExportWithFileOpsForTest(ctx, store, "task-1", outputPath, service.ExportFileOpsForTest{
+			Rename: failSecondExportPublish(publishErr),
+			Link: func(string, string) error {
+				return errors.New("synthetic unsupported hard link")
+			},
+		})
+		if !errors.Is(err, publishErr) {
+			t.Fatalf("Export() error = %v, want %v", err, publishErr)
+		}
+		if got := readFile(t, outputPath); got != "old success\n" {
+			t.Errorf("success file = %q, want old copied content", got)
+		}
+		if got := readFile(t, failedPath); got != "old failure\n" {
+			t.Errorf("failed file = %q, want old copied content", got)
 		}
 		assertNoExportTemps(t, directory)
 	})
