@@ -43,12 +43,15 @@
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
-| Task 7 cleanup and fuzz | `go mod tidy`; all-Go `gofmt`; `git diff --check`; `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` | pass | Direct/indirect requirements normalized; fuzz completed 6,693 executions without a crash or hang. |
-| Failure audit RED/GREEN | `go test ./internal/facade -run '^TestOpenAI_CompletePreservesAuditableFailureResponse$' -v` | pass after expected RED | Covers bounded raw-response propagation on HTTP 400 and malformed success envelopes; no payload is logged. |
+| Task 7 build | `go build -trimpath -o /private/tmp/sendllm-task7-final .` | pass, exit 0 | Empty stdout; real binary, no fake replacement. Runtime and final Task 7 production Go source had no diff. |
+| Task 7 cleanup and fuzz | `GOPROXY=https://proxy.golang.org,direct go mod tidy`; all-Go `gofmt`; `git diff --check`; `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` | pass, exit 0 | Direct/indirect requirements normalized; fuzz completed 6,693 executions without a crash or hang. |
+| Failure audit RED/GREEN | `go test ./internal/facade -run '^TestOpenAI_CompletePreservesAuditableFailureResponse$' -v` | RED exit 1, GREEN exit 0 | RED assertions: HTTP 400 and malformed HTTP 200 both had empty `RawResponse`; GREEN passed both cases after bounded propagation. No real raw payload was printed. |
 | Task 7 facade and full gate | `go test ./internal/facade`; `go test -race ./internal/facade`; `./init.sh` | pass | Full tests, full race detector, formatting, and vet passed after the audit fix. |
 | Real capability check | compiled client against the configured gateway in `json_schema` and `json_object` modes | fallback confirmed | `json_schema` returned HTTP 400 structured-output rejection; equivalent `json_object` returned HTTP 200. |
-| Real 50-record CLI | `/private/tmp/sendllm-task7-final -config /private/tmp/sendllm-task7-final.yaml` | pass, exit 0 | Fresh `Test_State.db`; added 50, skipped 0, succeeded 50, failed 0; `json_object`, max tokens 2000, concurrency 4. |
-| Real output integrity | temporary local verifier using `config/result-schema.json`, `service.Validator`, and `dao.Counts` | pass | Input/output 50, unique trace ID sets equal, safe 34, unsafe 16, all Schema/semantic-valid, all method=auto, failed file/state 0. |
+| Pinned real config | `zsh -lic 'test -n "$AI_GATEWAY_API_KEY"'` | pass, exit 0 | `base_url=https://aigateway.venusgroup.com.cn/ai/deepseek/openai`; `model=deepseek-v4-pro`; `api_key_env=AI_GATEWAY_API_KEY`; no Key value printed. |
+| Real 50-record CLI | `zsh -lic 'exec /private/tmp/sendllm-task7-final -config /private/tmp/sendllm-task7-final.yaml'` | pass, exit 0 | Count-only stdout: `added=50 skipped=0 succeeded=50 failed=0`; fresh formal state, `json_object`, max tokens 2000, concurrency 4. |
+| Real output integrity | `go run .superpowers/sdd/2026-08-05-sendllm-implementation/task-7-verify/main.go -config /private/tmp/sendllm-task7-final.yaml -input /Users/lijiayang/venus/SendLLM/Test_Input.jsonl -output /Users/lijiayang/venus/SendLLM/Test_Output.jsonl -state /Users/lijiayang/venus/SendLLM/Test_State.db -task-id sendllm-task7-real-final-20260806` | pass, exit 0 | `validation=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`. |
+| Security and scope | `rg -n 'Bearer |api[_-]?key|authorization|prompt.*slog|response.*slog' --glob '*.go' --glob '*.yaml' --glob '*.md' .`; `rg -n 'ListenAndServe|redis|kafka|RabbitMQ|message[ _-]?queue|cron' --glob '*.go' .` | reviewed | 23 expected protocol/env/test/evidence lines; credential values 0; payload-logging paths 0; out-of-scope Go matches 0. |
 | Task 4 foundation | `go test ./internal/lib/tokenizer ./internal/lib/limiter ./internal/service -run 'Test(Estimate|Limiter|RetryPolicy|ClassifyFailure)'`; `go test -race ./internal/lib/limiter`; `./init.sh` | pass | Covers conservative token estimates, bounded concurrency, disabled rates, token budget rejection, cooldown, idempotent release, failure classes, backoff, full race tests, and vet. |
 | Harness validation | `validate-harness.mjs --target .` | pass | 100/100; all subsystems 5/5. |
 | Config and DTO tests | `go test ./internal/lib/configs ./internal/dto` | pass | Covers strict loading, defaults, source normalization, and annotation contracts. |
@@ -113,7 +116,7 @@
 ## Blockers / Risks
 
 - Provider RPM/TPM remain undocumented; transient 429s occurred during acceptance even at concurrency 4 and were recovered by durable retries.
-- The design's approved formal first-batch starting point is concurrency 64, but quota should be confirmed first; absent confirmation, calibrate conservatively from 4 based on observed 429s.
+- The original design target of concurrency 64 is superseded by real-gateway evidence. The current formal recommendation is concurrency 4 with continued calibration against observed 429s.
 - OpenAI-compatible capability is provider-specific. Do not switch this task back to `json_schema` without a new state file and a fresh capability check.
 
 ## Next Session Startup
@@ -126,4 +129,4 @@
 
 ## Recommended Next Step
 
-- Preserve the local acceptance artifacts outside Git. Before the first 30,000-record batch, confirm quota, choose a new task/state path, and calibrate concurrency while keeping payload-free logs.
+- Preserve the local acceptance artifacts outside Git. Before the first 30,000-record batch, confirm quota, choose a new task/state path, start at concurrency 4, and continue calibration while keeping payload-free logs.

@@ -37,7 +37,7 @@
 - [ ] The account concurrency limit is reported as approximately 500, but real acceptance observed transient 429 responses at concurrency 16 and 4; RPM and TPM remain undocumented.
 - [x] This gateway rejected `json_schema` with HTTP 400 while accepting an otherwise equivalent `json_object` request with HTTP 200.
 - [ ] `deepseek-v4-pro` uses completion budget for reasoning; `max_tokens=500` produced `finish_reason=length` with empty content, while the accepted run used 2000.
-- [ ] The approved general first-batch baseline remains concurrency 64, but the observed 429s require quota confirmation or conservative calibration before using it.
+- [ ] The original design target of concurrency 64 is superseded by real-gateway evidence; the current formal recommendation is concurrency 4 with continued calibration against 429s.
 
 ## Decisions Made
 
@@ -52,6 +52,7 @@
 - Configuration defaults follow the approved example: concurrency 64, shutdown timeout 30s, request attempts 5, format repairs 2, backoff 1s to 60s, explanation length 10 to 70, and model timeout 60s.
 - The real gateway acceptance uses `json_object`; `json_schema` was rejected by the provider.
 - The final 50-record run uses `max_tokens=2000` because audit metadata proved that 500 tokens could be exhausted by reasoning before final content.
+- The configuration default of concurrency 64 is a historical design target, not the current operating recommendation; real evidence sets the starting point to 4 with continued calibration.
 
 ## Files Modified This Session
 
@@ -82,12 +83,15 @@
 
 ## Evidence Of Completion
 
-- [x] Task 7 dependency/format gate: `go mod tidy`, all-Go `gofmt`, and `git diff --check` passed without dependency version drift; direct/indirect requirements and necessary checksums were normalized.
-- [x] Task 7 parser fuzz: `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` passed with 6,693 executions.
-- [x] Task 7 audit RED/GREEN: `TestOpenAI_CompletePreservesAuditableFailureResponse` failed because HTTP/malformed failure bodies were dropped, then passed after bounded raw-response propagation; facade tests, race tests, and `./init.sh` passed.
+- [x] Task 7 pinned non-secret config: `base_url=https://aigateway.venusgroup.com.cn/ai/deepseek/openai`, `model=deepseek-v4-pro`, `api_key_env=AI_GATEWAY_API_KEY`; `zsh -lic 'test -n "$AI_GATEWAY_API_KEY"'` exited 0 without printing its value.
+- [x] Task 7 build: `go build -trimpath -o /private/tmp/sendllm-task7-final .` exited 0 with empty stdout; runtime production Go source and final Task 7 production Go source had no diff.
+- [x] Task 7 dependency/format gate: `GOPROXY=https://proxy.golang.org,direct go mod tidy`, all-Go `gofmt`, and `git diff --check` exited 0 without dependency version drift; direct/indirect requirements and necessary checksums were normalized.
+- [x] Task 7 parser fuzz: `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` exited 0 with 6,693 executions.
+- [x] Task 7 audit RED/GREEN: `go test ./internal/facade -run '^TestOpenAI_CompletePreservesAuditableFailureResponse$' -v` first exited 1 because both synthetic HTTP 400 and malformed HTTP 200 cases returned empty `RawResponse`; the same command exited 0 after bounded response propagation. Facade tests, race tests, and `./init.sh` passed.
 - [x] Task 7 real provider capability: `json_schema` returned HTTP 400 with a structured-output rejection; an otherwise equivalent `json_object` probe returned HTTP 200.
-- [x] Task 7 real E2E: compiled CLI with a fresh formal state, `json_object`, `max_tokens=2000`, and concurrency 4 exited 0 with added=50, skipped=0, succeeded=50, failed=0.
-- [x] Task 7 output acceptance: input=50, output=50, unique matching trace IDs=50, Schema/business-valid=50, `annotation.method=auto`=50, safe=34, unsafe=16, failed file=0, SQLite failed=0.
+- [x] Task 7 real E2E: `zsh -lic 'exec /private/tmp/sendllm-task7-final -config /private/tmp/sendllm-task7-final.yaml'` used a fresh formal state, `json_object`, `max_tokens=2000`, and concurrency 4; exit 0, stdout `added=50 skipped=0 succeeded=50 failed=0`.
+- [x] Task 7 output acceptance: `go run .superpowers/sdd/2026-08-05-sendllm-implementation/task-7-verify/main.go -config /private/tmp/sendllm-task7-final.yaml -input /Users/lijiayang/venus/SendLLM/Test_Input.jsonl -output /Users/lijiayang/venus/SendLLM/Test_Output.jsonl -state /Users/lijiayang/venus/SendLLM/Test_State.db -task-id sendllm-task7-real-final-20260806` exited 0; stdout `validation=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`.
+- [x] Task 7 security gate: `rg -n 'Bearer |api[_-]?key|authorization|prompt.*slog|response.*slog' --glob '*.go' --glob '*.yaml' --glob '*.md' .` exited 0; sanitized review found 23 expected protocol/env/test/evidence lines, 0 credential values, and 0 payload-logging code paths. `rg -n 'ListenAndServe|redis|kafka|RabbitMQ|message[ _-]?queue|cron' --glob '*.go' .` exited 1 with no out-of-scope matches.
 - [x] Task 6 focused verification: `go test ./internal/service -run TestExport`, `go test . -run TestRun`, and `go test -race . ./internal/service` passed.
 - [x] Task 6 full gate: `./init.sh` passed formatting, all tests, full race tests, and `go vet ./...` on 2026-08-06.
 - [x] Mode wiring mutation check: hard-coding `json_schema` made `TestRunWiresConfiguredStructuredOutputMode` fail; restoring `cfg.Model.StructuredOutput` passed.
@@ -102,4 +106,4 @@
 
 ## Notes For Next Session
 
-All Harness features are complete. Re-run `./init.sh` after any change. For a production batch, keep the API Key environment-only, use a new state file for semantic changes, and calibrate concurrency against observed 429s before adopting the approved concurrency-64 baseline.
+All Harness features are complete. Re-run `./init.sh` after any change. For a production batch, keep the API Key environment-only, use a new state file for semantic changes, and start at concurrency 4 while continuing to calibrate against observed 429s. The design-time concurrency-64 target is superseded by this evidence.

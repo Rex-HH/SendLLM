@@ -46,7 +46,7 @@
       "description": "Run formatting, unit/integration tests, race detection, vet, parser fuzz smoke checks, and record final evidence and residual risks.",
       "dependencies": ["feat-005"],
       "status": "done",
-      "evidence": "2026-08-06: `go mod tidy`, 全量 `gofmt`, `git diff --check`, 5 秒 `FuzzParseJSONL` 和 `./init.sh` 通过。真实网关拒绝 `json_schema`（HTTP 400），对照接受 `json_object`（HTTP 200）；修复失败响应审计后，使用全新正式状态、`json_object`、`max_tokens=2000`、并发 4 的真实 CLI exit 0，added=50、succeeded=50、failed=0。正式 Schema、`service.Validator`、trace_id 集合、annotation.method 和 SQLite 终态独立校验全部 50/50 通过。"
+      "evidence": "2026-08-06: pinned `base_url=https://aigateway.venusgroup.com.cn/ai/deepseek/openai`, `model=deepseek-v4-pro`, `api_key_env=AI_GATEWAY_API_KEY`。Build: `go build -trimpath -o /private/tmp/sendllm-task7-final .` exit 0。Fuzz: `go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service` exit 0, execs=6693。真实 E2E: `zsh -lic 'exec /private/tmp/sendllm-task7-final -config /private/tmp/sendllm-task7-final.yaml'` exit 0，stdout `added=50 skipped=0 succeeded=50 failed=0`。生产校验: `go run .superpowers/sdd/2026-08-05-sendllm-implementation/task-7-verify/main.go -config /private/tmp/sendllm-task7-final.yaml -input /Users/lijiayang/venus/SendLLM/Test_Input.jsonl -output /Users/lijiayang/venus/SendLLM/Test_Output.jsonl -state /Users/lijiayang/venus/SendLLM/Test_State.db -task-id sendllm-task7-real-final-20260806` exit 0，input/output/trace/schema/business/auto=50，failed_file=0，state_succeeded/state_failed=50/0。`./init.sh` exit 0。"
     }
   ]
 }
