@@ -83,6 +83,15 @@ Run the standard gate:
 
 It checks formatting, unit/integration tests, the race detector, and `go vet` after `go.mod` exists.
 
+## Final Live Acceptance
+
+- 中间单元测试和集成测试使用本地模拟 OpenAI 服务，不消耗真实模型额度。
+- 项目最终完成前必须读取仓库根目录的 `模型配置.md`，使用其中的真实 `base_url`、模型名和 API Key 环境变量名运行端到端测试。
+- 当前真实验收固定使用 `base_url=https://aigateway.venusgroup.com.cn/ai/deepseek/openai`、`model=deepseek-v4-pro`、`api_key_env=AI_GATEWAY_API_KEY`。
+- 最终端到端测试必须读取仓库根目录的 `Test_Input.jsonl`，真实调用模型，并生成 `Test_Output.jsonl`；不得以 fake server 的结果替代最终验收。
+- 完成证据必须包括：CLI 退出码为 `0`、输入输出均为 50 条、`trace_id` 集合完全一致且无重复、每条输出通过正式结果 Schema 校验、失败记录数为 0。
+- 不得在命令、日志、报告或提交中打印 `AI_GATEWAY_API_KEY` 的值。只检查环境变量是否非空。
+
 ## Definition Of Done
 
 A feature is complete only when:
@@ -91,6 +100,7 @@ A feature is complete only when:
 - The implementation is the smallest clear solution for the current feature and contains no speculative abstraction or duplicate validation.
 - All added Go comments are necessary, clear, Go doc compliant where applicable, and written in Chinese.
 - Relevant tests exist and pass.
+- The real-model end-to-end acceptance in Final Live Acceptance passes; simulated-provider tests alone are insufficient for project completion.
 - `./init.sh` passes from the repository root.
 - No sensitive payload or credential appears in logs, fixtures, or Git changes.
 - `feature_list.json`, `progress.md`, and `session-handoff.md` contain current evidence and the next action.

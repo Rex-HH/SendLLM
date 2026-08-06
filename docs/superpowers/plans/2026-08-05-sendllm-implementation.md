@@ -22,6 +22,7 @@
 - 所有新增 Go 注释使用规范中文；只注释导出契约、原因、不变量和并发所有权，不逐行复述代码。
 - 每个任务采用测试先行；任务结束时更新 `feature_list.json`、`progress.md`、`session-handoff.md`，并提交独立 commit。
 - 每次声称完成前运行任务的窄测试；最终必须通过 `./init.sh`。
+- 最终验收必须使用 `模型配置.md` 指定的真实 DeepSeek 网关和 `AI_GATEWAY_API_KEY`，处理 `Test_Input.jsonl` 的全部 50 条记录并生成通过 Schema 的 `Test_Output.jsonl`；fake server 不能替代该门禁。
 
 ## 文件职责图
 
@@ -53,7 +54,7 @@ README.md                                构建、运行、恢复、限速和结
 
 ---
 
-### 任务 1：Go 工程、配置和数据契约
+### Task 1：Go 工程、配置和数据契约
 
 **对应 Harness 功能：** `feat-001`
 
@@ -258,7 +259,7 @@ const (
 
 - [ ] **步骤 7：编写真实示例配置、风险闭集、Schema 和系统提示词**
 
-`config/risk-types.yaml` 必须包含 `样本格式-8-4.md` 的全部英文风险枚举及中文说明。`config/result-schema.json` 必须要求 `label` 和 `explanation`，限制核心枚举，并允许 `extended_info` 中已列出的 MASB 字段；风险闭集由运行时语义校验二次执行。系统提示词必须包含两个字面占位符，要求只输出 JSON、不得回显原文、风险类型单选、解释长度 10 至 70 个字符，并说明安全结果规则。
+`config/risk-types.yaml` 必须包含 `样本格式-8-4.md` 的全部英文风险枚举及中文说明。`config/result-schema.json` 必须要求 `label` 和 `explanation`，限制核心枚举，并允许 `extended_info` 中已列出的 MASB 字段；风险闭集由运行时语义校验二次执行。系统提示词必须包含两个字面占位符，要求只输出 JSON、不得回显原文、风险类型单选、解释长度 10 至 70 个字符，并说明安全结果规则。`config/task.example.yaml` 的模型配置使用真实验收值：`base_url: https://aigateway.venusgroup.com.cn/ai/deepseek/openai`、`name: deepseek-v4-pro`、`api_key_env: AI_GATEWAY_API_KEY`；不得写入 Key 值。
 
 - [ ] **步骤 8：运行任务 1 测试和格式检查**
 
@@ -283,7 +284,7 @@ git commit -m "feat: add task configuration and data contracts"
 
 ---
 
-### 任务 2：JSONL 流式导入和 SQLite 状态
+### Task 2：JSONL 流式导入和 SQLite 状态
 
 **对应 Harness 功能：** `feat-002`
 
@@ -419,7 +420,7 @@ git commit -m "feat: persist resumable JSONL imports"
 
 ---
 
-### 任务 3：OpenAI 适配器和严格结果校验
+### Task 3：OpenAI 适配器和严格结果校验
 
 **对应 Harness 功能：** `feat-003`
 
@@ -569,7 +570,7 @@ git commit -m "feat: validate OpenAI structured annotations"
 
 ---
 
-### 任务 4：Token 估算、三重限速和重试策略
+### Task 4：Token 估算、三重限速和重试策略
 
 **对应 Harness 功能：** `feat-004` 的基础部分；本任务结束时保持 `in-progress`。
 
@@ -675,7 +676,7 @@ git commit -m "feat: add rate limits and retry policy"
 
 ---
 
-### 任务 5：可恢复并发 Runner 和格式修复
+### Task 5：可恢复并发 Runner 和格式修复
 
 **对应 Harness 功能：** 完成 `feat-004`
 
@@ -709,6 +710,7 @@ type RunnerConfig struct {
   SystemPrompt         []byte
   Scene                string
   Schema               json.RawMessage
+  Mode                 string // 来自 model.structured_output
   MaxOutputTokens      int
   RequestMaxAttempts   int
   FormatRepairAttempts int
@@ -829,7 +831,7 @@ git commit -m "feat: run resumable concurrent annotations"
 
 ---
 
-### 任务 6：确定顺序导出、CLI 和操作文档
+### Task 6：确定顺序导出、CLI 和操作文档
 
 **对应 Harness 功能：** `feat-005`
 
@@ -903,7 +905,7 @@ git commit -m "feat: add CLI and ordered JSONL export"
 
 ---
 
-### 任务 7：全量验证、fuzz 冒烟和交付
+### Task 7：全量验证、fuzz 冒烟和真实模型端到端交付
 
 **对应 Harness 功能：** `feat-006`
 
@@ -917,7 +919,7 @@ git commit -m "feat: add CLI and ordered JSONL export"
 
 **接口：**
 - 消费：完整 CLI 和 Harness 验证入口
-- 产出：可从干净检出构建、测试和恢复的首版 SendLLM
+- 产出：可从干净检出构建、测试、恢复并通过真实模型端到端验收的首版 SendLLM
 
 - [ ] **步骤 1：整理依赖和格式**
 
@@ -947,11 +949,21 @@ go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service
 
 预期：格式检查、`go test ./...`、`go test -race ./...` 和 `go vet ./...` 全部通过。
 
-- [ ] **步骤 4：执行合成端到端本地验证**
+- [ ] **步骤 4：确认真实模型验收前置条件且不泄露密钥**
 
-使用测试二进制或 `httptest` 集成夹具运行 5 条合成 JSONL，包含 safe、unsafe、一次 429 后成功、一次非法 JSON 修复成功和一个最终失败。中断后再次启动同一状态文件，验证已成功 `trace_id` 的 fake 调用计数不增加，并确认成功/失败导出顺序和退出码。
+读取仓库根目录 `模型配置.md`，确认 base URL 为 `https://aigateway.venusgroup.com.cn/ai/deepseek/openai`、模型名为 `deepseek-v4-pro`、Key 环境变量名为 `AI_GATEWAY_API_KEY`。只运行 `test -n "$AI_GATEWAY_API_KEY"` 检查环境变量存在，不得输出其值。验证 `Test_Input.jsonl` 恰好 50 行、每行 JSON 合法、`trace_id` 非空且唯一。
 
-- [ ] **步骤 5：审查安全和范围**
+- [ ] **步骤 5：使用真实模型运行完整端到端流程**
+
+创建不含密钥值的本地任务配置，输入指向仓库根目录 `Test_Input.jsonl`，输出指向 `Test_Output.jsonl`，状态库使用 `Test_State.db`，模型和 Key 环境变量名使用上一步固定值。结构化输出优先使用该网关实测支持的 `json_schema`；若网关明确返回不支持该模式，则保留测试证据并改用设计允许的 `json_object`。运行编译后的真实 CLI，不得使用 fake server 或替换 Completer。
+
+预期：CLI 退出码为 `0`，真实网关完成全部 50 条模型调用，生成 `Test_Output.jsonl`，失败记录数为 0。
+
+- [ ] **步骤 6：验证真实输出完整性**
+
+使用本地校验命令确认：输入输出都为 50 条；输出 `trace_id` 非空、唯一且集合与输入完全一致；每条输出包含合法 `label`、`explanation`、`annotation.method=auto`，unsafe 记录包含闭集内的 `risk_type` 和合法 `risk_level`；完整输出逐条通过 `config/result-schema.json` 和业务语义校验。命令只能输出计数和通过/失败摘要，不得输出 prompt、response 或模型原始内容。
+
+- [ ] **步骤 7：审查安全和范围**
 
 运行：
 
@@ -963,18 +975,18 @@ rg -n 'Bearer |api[_-]?key|authorization|prompt.*slog|response.*slog' --glob '*.
 
 预期：只出现文档中的占位环境变量名和协议字段，不出现真实凭证或把载荷写入日志的代码；没有 HTTP 服务、队列或其他超出首版范围的模块。
 
-- [ ] **步骤 6：更新最终 Harness 证据**
+- [ ] **步骤 8：更新最终 Harness 证据**
 
-将 `feat-006.status` 设为 `done`，在 `feature_list.json` 记录 `./init.sh` 和 fuzz 命令，在 `progress.md` 写明所有功能完成，在 `session-handoff.md` 记录构建/运行命令、验证结果、已知的供应商差异风险和真实批次首次建议并发 64。
+将 `feat-006.status` 设为 `done`，在 `feature_list.json` 记录 `./init.sh`、fuzz 和真实模型端到端命令，在 `progress.md` 写明 50/50 真实输出验证证据，在 `session-handoff.md` 记录构建/运行命令、真实端到端结果、已知的供应商差异风险和正式批次首次建议并发 64。
 
-- [ ] **步骤 7：提交最终验证状态**
+- [ ] **步骤 9：提交最终验证状态**
 
 ```bash
 git add go.mod go.sum feature_list.json progress.md session-handoff.md
 git commit -m "chore: verify SendLLM batch workflow"
 ```
 
-- [ ] **步骤 8：最终提交检查**
+- [ ] **步骤 10：最终提交检查**
 
 运行：
 

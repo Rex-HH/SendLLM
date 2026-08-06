@@ -5,48 +5,48 @@
       "name": "Project bootstrap and configuration",
       "description": "Initialize the Go module, CLI entrypoint, typed YAML configuration, prompt/risk taxonomy loading, validation, and example configuration.",
       "dependencies": [],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-05: gofmt -w internal/lib/configs internal/dto; go test ./internal/lib/configs ./internal/dto; go vet ./internal/lib/configs ./internal/dto; ./init.sh all passed, including -race."
     },
     {
       "id": "feat-002",
       "name": "JSONL import and SQLite state",
       "description": "Import extensible JSONL records, normalize optional response, enforce trace_id idempotency, persist ordered task/item/attempt state, and recover interrupted processing.",
       "dependencies": ["feat-001"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-05: go test ./internal/dao ./internal/service -run 'Test(Store|Import)' -v; go test -race ./internal/dao ./internal/service -run 'Test(Store|Import)'; go test ./internal/service -run '^$' -fuzz FuzzParseJSONL -fuzztime 1s; ./init.sh all passed."
     },
     {
       "id": "feat-003",
       "name": "OpenAI-compatible structured annotation",
       "description": "Implement the OpenAI-compatible client, structured-output modes, response parsing, schema checks, and MASB cross-field validation.",
       "dependencies": ["feat-001", "feat-002"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-05: RED `go test ./internal/service -run TestValidator -v` failed for missing Validator; GREEN `go test ./internal/service -run TestValidator -v`, `go test ./internal/facade`, `go test -race ./internal/facade`, and `./init.sh` all passed."
     },
     {
       "id": "feat-004",
       "name": "Concurrent runner and retry policy",
       "description": "Add the bounded worker pool, concurrency/RPM/TPM limits, shared 429 cooldown, classified retries, format repair, graceful shutdown, and durable retry scheduling.",
       "dependencies": ["feat-002", "feat-003"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-05: DAO 状态机与 Runner 严格 RED/GREEN 完成；`go test ./internal/dao ./internal/service`、`go test -race ./internal/dao ./internal/service` 和 `./init.sh` 全部通过，覆盖恢复、并发上限、429 共享冷却、5xx 重试、401 停止、格式修复、最终失败与取消退出。"
     },
     {
       "id": "feat-005",
       "name": "Ordered export and operator workflow",
       "description": "Export successful and failed JSONL deterministically, report safe progress without payload logging, document run/resume/tuning behavior, and provide examples.",
       "dependencies": ["feat-004"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-06: Export 与 CLI 严格 RED/GREEN 完成；go test ./internal/service -run TestExport、go test . -run TestRun、go test -race . ./internal/service 和 ./init.sh 全部通过。覆盖确定顺序、字段合并、安全失败诊断、原子替换、0/1/2/130 退出码、Schema/Mode 装配、失败后导出现有终态及载荷无日志泄漏。"
     },
     {
       "id": "feat-006",
       "name": "Full verification and handoff",
       "description": "Run formatting, unit/integration tests, race detection, vet, parser fuzz smoke checks, and record final evidence and residual risks.",
       "dependencies": ["feat-005"],
-      "status": "not-started",
-      "evidence": ""
+      "status": "done",
+      "evidence": "2026-08-06: 最新真实 E2E 使用最终本轮代码和临时验收目录 `/private/tmp/sendllm-live-final-moqKr4`，读取 `Test_Input.jsonl` 50 条，CLI exit 0，`added=50 skipped=0 succeeded=50 failed=0`；随后 tracked live acceptance exit 0，`live_acceptance=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`。最终修复波覆盖 SQLite 重试时间排序与旧值迁移、大整数导入哈希、Runner 优雅排空、构造前置校验、固定结果枚举、非 2xx 分类和有界审计前缀、Export 残留、已验证示例配置、Go doc 与三个低成本覆盖空缺。合并 focused regression、`go test -race . ./internal/dao ./internal/facade ./internal/lib/limiter ./internal/service -count=1`、`go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service`（6,738 次）和最终 `./init.sh` 均 exit 0；`git diff --check`、新增 Go 行长度、ignore、安全与范围扫描均通过。用户批准的最终 re-review 例外继续修复 Runner 进度查询取消竞态、进度查询阻塞时的 shutdown_timeout 缺口和旧 `source_hash` 升级兼容；相关 focused 命令均先正确 RED 后 GREEN，Runner 确定性交错重复 50 次、DAO/Runner 全测试、`go test -race ./internal/dao ./internal/service -count=1`、`./init.sh` 和 5 秒 FuzzParseJSONL（6,159 次）均 exit 0。"
     }
   ]
 }

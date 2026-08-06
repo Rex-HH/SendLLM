@@ -261,7 +261,9 @@ sendllm -config ./config/task.yaml
 - 确定顺序导出和原子文件替换；
 - 程序中断时不存在 goroutine 泄漏或数据竞争。
 
-测试使用 Go 标准库、`httptest`、临时 SQLite 数据库、表驱动用例和解析器 fuzz 测试。自动化测试不得调用需要付费的真实模型 API。
+测试使用 Go 标准库、`httptest`、临时 SQLite 数据库、表驱动用例和解析器 fuzz 测试。中间自动化测试不得调用需要付费的真实模型 API。
+
+最终项目验收必须使用真实模型请求。真实验收从仓库根目录 `模型配置.md` 读取 `base_url=https://aigateway.venusgroup.com.cn/ai/deepseek/openai`、`model=deepseek-v4-pro` 和 `api_key_env=AI_GATEWAY_API_KEY`，读取 `Test_Input.jsonl` 的 50 条记录，运行完整 CLI 并生成 `Test_Output.jsonl`。只有 CLI 返回 0、输出 50 条、输入输出 `trace_id` 集合完全一致且无重复、全部输出通过正式 Schema、失败记录数为 0，才能认定端到端测试通过。
 
 仓库统一验证入口为：
 
