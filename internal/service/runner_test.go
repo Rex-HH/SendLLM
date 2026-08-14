@@ -94,6 +94,40 @@ func TestRunner_UsesConfiguredModeForClassificationAndRepair(t *testing.T) {
 	}
 }
 
+func TestRunner_UsesCustomClassificationRequest(t *testing.T) {
+	store := openTestStore(t)
+	seedRunnerItems(t, store, runnerItem("custom-id", 1, dao.ItemPending))
+	fake := newFakeCompleter(func(ctx context.Context, req dto.CompletionRequest) (dto.CompletionResponse, error) {
+		var payload map[string]string
+		if err := json.Unmarshal([]byte(req.Messages[1].Content), &payload); err != nil {
+			t.Fatalf("custom request payload error: %v", err)
+		}
+		if payload["kind"] != "custom" || payload["id"] != "custom-id" {
+			t.Fatalf("custom request payload = %#v", payload)
+		}
+		return completion(validSafe), nil
+	})
+	customRequest := func(item dao.Item) (dto.CompletionRequest, error) {
+		return dto.CompletionRequest{
+			Messages: []dto.Message{
+				{Role: "system", Content: "custom system"},
+				{Role: "user", Content: `{"kind":"custom","id":"` + item.TraceID + `"}`},
+			},
+			Schema: []byte(validatorSchema),
+			Mode:   "json_schema",
+		}, nil
+	}
+	runner := newTestRunnerWithRequest(t, store, fake, customRequest)
+
+	summary, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if summary.Succeeded != 1 {
+		t.Fatalf("Succeeded = %d, want 1", summary.Succeeded)
+	}
+}
+
 func TestNewRunner_RejectsInvalidMode(t *testing.T) {
 	store := openTestStore(t)
 	validator, err := service.NewValidator(
@@ -630,6 +664,53 @@ func newTestRunnerWithMode(
 		},
 		Jitter:     func(delay time.Duration) time.Duration { return delay },
 		OnProgress: onProgress,
+	})
+	if err != nil {
+		t.Fatalf("NewRunner() error = %v", err)
+	}
+	return runner
+}
+
+func newTestRunnerWithRequest(
+	t *testing.T,
+	store *dao.Store,
+	completer service.Completer,
+	buildRequest func(dao.Item) (dto.CompletionRequest, error),
+) *service.Runner {
+	t.Helper()
+	validator, err := service.NewValidator(
+		[]byte(validatorSchema),
+		map[string]string{"jailbreak": "test"},
+		10,
+		70,
+	)
+	if err != nil {
+		t.Fatalf("NewValidator() error = %v", err)
+	}
+	requestLimiter, err := limiter.New(limiter.Config{Concurrency: 1})
+	if err != nil {
+		t.Fatalf("limiter.New() error = %v", err)
+	}
+	runner, err := service.NewRunner(service.RunnerConfig{
+		TaskID:               "task-1",
+		SystemPrompt:         []byte("synthetic system prompt"),
+		Scene:                "auto",
+		Schema:               []byte(validatorSchema),
+		Mode:                 "json_schema",
+		MaxOutputTokens:      100,
+		RequestMaxAttempts:   1,
+		FormatRepairAttempts: 0,
+		ShutdownTimeout:      time.Second,
+		Store:                store,
+		Completer:            completer,
+		Validator:            validator,
+		Limiter:              requestLimiter,
+		RetryPolicy: service.RetryPolicy{
+			MaxAttempts:    1,
+			InitialBackoff: time.Millisecond,
+			MaxBackoff:     time.Millisecond,
+		},
+		BuildRequest: buildRequest,
 	})
 	if err != nil {
 		t.Fatalf("NewRunner() error = %v", err)

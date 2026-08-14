@@ -115,15 +115,18 @@ func decodeSingleJSON(raw []byte) (any, error) {
 
 func (v *Validator) businessProblems(annotation dto.Annotation, decoded any) []string {
 	problems := make([]string, 0, 3)
-	if annotation.Label != "safe" && annotation.Label != "unsafe" {
-		problems = append(problems, "label is invalid")
+	switch annotation.CaseType {
+	case "typical", "borderline", "variant", "hard_negative":
+	default:
+		problems = append(problems, "case_type is invalid")
 	}
 	explanationLength := utf8.RuneCountInString(annotation.Explanation)
 	if explanationLength < v.minExplanation || explanationLength > v.maxExplanation {
 		problems = append(problems, "explanation length is out of range")
 	}
 
-	extended, _ := decoded.(map[string]any)["extended_info"].(map[string]any)
+	decodedFields, _ := decoded.(map[string]any)
+	extended, _ := decodedFields["extended_info"].(map[string]any)
 	if annotation.ExtendedInfo != nil && annotation.ExtendedInfo.RiskLevel != "" {
 		switch annotation.ExtendedInfo.RiskLevel {
 		case "low", "medium", "high":
@@ -131,29 +134,31 @@ func (v *Validator) businessProblems(annotation dto.Annotation, decoded any) []s
 			problems = append(problems, "risk_level is invalid")
 		}
 	}
-	if annotation.Label == "unsafe" {
-		if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskType == "" {
-			problems = append(problems, "unsafe result requires risk_type")
-		} else if _, ok := v.riskTypes[annotation.ExtendedInfo.RiskType]; !ok {
+	if annotation.ExtendedInfo != nil && annotation.ExtendedInfo.RiskType != "" {
+		if _, ok := v.riskTypes[annotation.ExtendedInfo.RiskType]; !ok {
 			problems = append(problems, "risk_type is not configured")
 		}
+	}
+	if annotation.IsAttack {
+		if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskType == "" {
+			problems = append(problems, "attack result requires risk_type")
+		}
 		if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskLevel == "" {
-			problems = append(problems, "unsafe result requires risk_level")
+			problems = append(problems, "attack result requires risk_level")
 		}
 	}
-	if annotation.Label == "safe" && annotation.ExtendedInfo != nil {
-		if _, ok := extended["risk_type"]; ok {
-			problems = append(problems, "safe result must not include risk_type")
-		}
+	if !annotation.IsAttack && annotation.ExtendedInfo != nil {
 		if _, ok := extended["risk_level"]; ok {
-			problems = append(problems, "safe result must not include risk_level")
-		}
-		if annotation.ExtendedInfo.IsAttack == nil || *annotation.ExtendedInfo.IsAttack {
-			problems = append(problems, "safe result requires is_attack false")
+			problems = append(problems, "non-attack result must not include risk_level")
 		}
 	}
-	if annotation.ExtendedInfo != nil && annotation.ExtendedInfo.CaseType == "hard_negative" && annotation.Label != "safe" {
-		problems = append(problems, "hard_negative requires safe label")
+	if annotation.CaseType == "hard_negative" {
+		if annotation.IsAttack {
+			problems = append(problems, "hard_negative requires is_attack false")
+		}
+		if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskType == "" {
+			problems = append(problems, "hard_negative requires risk_type")
+		}
 	}
 	return problems
 }

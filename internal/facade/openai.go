@@ -116,6 +116,9 @@ func (o *OpenAI) Complete(ctx context.Context, req dto.CompletionRequest) (dto.C
 		if readErr != nil {
 			providerErr.Err = readErr
 		}
+		if providerErr.Kind == dto.ProviderBadRequest && isContentRiskResponse(rawResponse) {
+			providerErr.Kind = dto.ProviderContentRejected
+		}
 		return dto.CompletionResponse{RawResponse: rawResponse}, providerErr
 	}
 
@@ -243,6 +246,23 @@ func providerStatusError(response *http.Response) *dto.ProviderError {
 		}
 	}
 	return providerErr
+}
+
+func isContentRiskResponse(rawResponse []byte) bool {
+	var decoded struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rawResponse, &decoded); err != nil {
+		return false
+	}
+	if strings.EqualFold(decoded.Error.Message, "Content Exists Risk") {
+		return true
+	}
+	return decoded.Error.Type == "data_inspection_failed" || decoded.Error.Code == "data_inspection_failed"
 }
 
 func retryAfter(value string, now time.Time) time.Duration {

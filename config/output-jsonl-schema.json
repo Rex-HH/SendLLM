@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SendLLM exported JSONL line",
+  "description": "SendLLM 最终成功结果 JSONL 的单行结构。导出会保留 compact_jsonl 原始字段，并把模型标注结果写入 annotation 子项。",
+  "type": "object",
+  "required": ["id", "messages", "label", "annotation"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1
+    },
+    "label": {
+      "type": "object"
+    },
+    "source": {
+      "type": "object"
+    },
+    "meta": {
+      "type": "object"
+    },
+    "annotation": {
+      "type": "object",
+      "required": ["method", "is_attack", "case_type", "explanation"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "const": "auto"
+        },
+        "is_attack": {
+          "type": "boolean"
+        },
+        "case_type": {
+          "type": "string",
+          "enum": ["typical", "borderline", "variant", "hard_negative"]
+        },
+        "explanation": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 70
+        },
+        "extended_info": {
+          "type": "object",
+          "properties": {
+            "risk_type": {
+              "type": "string"
+            },
+            "risk_level": {
+              "type": "string",
+              "enum": ["low", "medium", "high"]
+            },
+            "attack_scenario": {
+              "type": "string"
+            },
+            "other": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

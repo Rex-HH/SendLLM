@@ -12,7 +12,9 @@
       "id": "feat-002",
       "name": "JSONL import and SQLite state",
       "description": "Import extensible JSONL records, normalize optional response, enforce trace_id idempotency, persist ordered task/item/attempt state, and recover interrupted processing.",
-      "dependencies": ["feat-001"],
+      "dependencies": [
+        "feat-001"
+      ],
       "status": "done",
       "evidence": "2026-08-05: go test ./internal/dao ./internal/service -run 'Test(Store|Import)' -v; go test -race ./internal/dao ./internal/service -run 'Test(Store|Import)'; go test ./internal/service -run '^$' -fuzz FuzzParseJSONL -fuzztime 1s; ./init.sh all passed."
     },
@@ -20,7 +22,10 @@
       "id": "feat-003",
       "name": "OpenAI-compatible structured annotation",
       "description": "Implement the OpenAI-compatible client, structured-output modes, response parsing, schema checks, and MASB cross-field validation.",
-      "dependencies": ["feat-001", "feat-002"],
+      "dependencies": [
+        "feat-001",
+        "feat-002"
+      ],
       "status": "done",
       "evidence": "2026-08-05: RED `go test ./internal/service -run TestValidator -v` failed for missing Validator; GREEN `go test ./internal/service -run TestValidator -v`, `go test ./internal/facade`, `go test -race ./internal/facade`, and `./init.sh` all passed."
     },
@@ -28,7 +33,10 @@
       "id": "feat-004",
       "name": "Concurrent runner and retry policy",
       "description": "Add the bounded worker pool, concurrency/RPM/TPM limits, shared 429 cooldown, classified retries, format repair, graceful shutdown, and durable retry scheduling.",
-      "dependencies": ["feat-002", "feat-003"],
+      "dependencies": [
+        "feat-002",
+        "feat-003"
+      ],
       "status": "done",
       "evidence": "2026-08-05: DAO 状态机与 Runner 严格 RED/GREEN 完成；`go test ./internal/dao ./internal/service`、`go test -race ./internal/dao ./internal/service` 和 `./init.sh` 全部通过，覆盖恢复、并发上限、429 共享冷却、5xx 重试、401 停止、格式修复、最终失败与取消退出。"
     },
@@ -36,7 +44,9 @@
       "id": "feat-005",
       "name": "Ordered export and operator workflow",
       "description": "Export successful and failed JSONL deterministically, report safe progress without payload logging, document run/resume/tuning behavior, and provide examples.",
-      "dependencies": ["feat-004"],
+      "dependencies": [
+        "feat-004"
+      ],
       "status": "done",
       "evidence": "2026-08-06: Export 与 CLI 严格 RED/GREEN 完成；go test ./internal/service -run TestExport、go test . -run TestRun、go test -race . ./internal/service 和 ./init.sh 全部通过。覆盖确定顺序、字段合并、安全失败诊断、原子替换、0/1/2/130 退出码、Schema/Mode 装配、失败后导出现有终态及载荷无日志泄漏。"
     },
@@ -44,9 +54,61 @@
       "id": "feat-006",
       "name": "Full verification and handoff",
       "description": "Run formatting, unit/integration tests, race detection, vet, parser fuzz smoke checks, and record final evidence and residual risks.",
-      "dependencies": ["feat-005"],
+      "dependencies": [
+        "feat-005"
+      ],
       "status": "done",
-      "evidence": "2026-08-06: 最新真实 E2E 使用最终本轮代码和临时验收目录 `/private/tmp/sendllm-live-final-moqKr4`，读取 `Test_Input.jsonl` 50 条，CLI exit 0，`added=50 skipped=0 succeeded=50 failed=0`；随后 tracked live acceptance exit 0，`live_acceptance=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`。最终修复波覆盖 SQLite 重试时间排序与旧值迁移、大整数导入哈希、Runner 优雅排空、构造前置校验、固定结果枚举、非 2xx 分类和有界审计前缀、Export 残留、已验证示例配置、Go doc 与三个低成本覆盖空缺。合并 focused regression、`go test -race . ./internal/dao ./internal/facade ./internal/lib/limiter ./internal/service -count=1`、`go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service`（6,738 次）和最终 `./init.sh` 均 exit 0；`git diff --check`、新增 Go 行长度、ignore、安全与范围扫描均通过。用户批准的最终 re-review 例外继续修复 Runner 进度查询取消竞态、进度查询阻塞时的 shutdown_timeout 缺口和旧 `source_hash` 升级兼容；相关 focused 命令均先正确 RED 后 GREEN，Runner 确定性交错重复 50 次、DAO/Runner 全测试、`go test -race ./internal/dao ./internal/service -count=1`、`./init.sh` 和 5 秒 FuzzParseJSONL（6,159 次）均 exit 0。"
+      "evidence": "2026-08-06: 最新真实 E2E 使用最终本轮代码和临时验收目录 `/private/tmp/sendllm-live-final-moqKr4`，读取 `Test_Input.jsonl` 50 条，CLI exit 0，`added=50 skipped=0 succeeded=50 failed=0`；随后 tracked live acceptance exit 0，`live_acceptance=PASS input=50 output=50 trace_unique=50 trace_set_equal=50 schema_valid=50 business_valid=50 annotation_auto=50 failed_file=0 state_succeeded=50 state_failed=0`。最终修复波覆盖 SQLite 重试时间排序与旧值迁移、大整数导入哈希、Runner 优雅排空、构造前置校验、固定结果枚举、非 2xx 分类和有界审计前缀、Export 残留、已验证示例配置、Go doc 与三个低成本覆盖空缺。合并 focused regression、`go test -race . ./internal/dao ./internal/facade ./internal/lib/limiter ./internal/service -count=1`、`go test -run=^$ -fuzz=FuzzParseJSONL -fuzztime=5s ./internal/service`（6,738 次）和最终 `./init.sh` 均 exit 0；`git diff --check`、新增 Go 行长度、ignore、安全与范围扫描均通过。用户批准的最终 re-review 例外继续修复 Runner 进度查询取消竞态、进度查询阻塞时的 shutdown_timeout 缺口和旧 `source_hash` 升级兼容；相关 focused 命令均先正确 RED 后 GREEN，Runner 确定性交错重复 50 次、DAO/Runner 全测试、`go test -race ./internal/dao ./internal/service -count=1`、`./init.sh` 和 5 秒 FuzzParseJSONL（6,159 次）均 exit 0。2026-08-10: 最新 52 条失败分析确认主要是 429/502 重试耗尽，保守重跑恢复 51 条，剩 1 条供应商 `content_filter`；新增 `ProviderMalformedResponse` 可重试 RED/GREEN 回归，恢复输出覆盖 `input=1000 output=999 failed=1 missing=0 overlap=0`，最终 `./init.sh` exit 0。 2026-08-10 follow-up: 52 条 cover 逻辑已合并进正常 CLI 流程，新增集成 RED/GREEN `TestRunCoversFinalFailuresBeforeExport`；失败 JSONL 改为保留源字段的人工补标模板，新增 RED/GREEN `TestExportWritesOrderedMergedSuccessAndSafeFailures`；最终 `./init.sh` exit 0。"
+    },
+    {
+      "id": "feat-007",
+      "name": "Compact JSONL input and nested annotation export",
+      "description": "Read compact_jsonl records by extracting prompt/response from messages, use id as the stable internal item ID, and merge model judgments into a dedicated annotation object without changing other source fields.",
+      "dependencies": [
+        "feat-006"
+      ],
+      "status": "done",
+      "evidence": "2026-08-11: baseline `./init.sh` exit 0 before edits. RED focused tests failed as expected because DTO still required legacy `trace_id`, Import rejected compact rows, and Export removed compact `label` while writing generated fields at top level. GREEN `go test ./internal/dto ./internal/service -run 'Test(ParseSourceCompactJSONL|ParseSourceRejectsInvalidContent|ImportAcceptsCompactJSONL|ExportWritesOrderedMergedSuccessAndSafeFailures)' -count=1 -v` exit 0. Wider `go test ./... -count=1` exit 0. Final `./init.sh` exit 0 with formatting, all tests, full race tests, and `go vet ./...` passing."
+    },
+    {
+      "id": "feat-008",
+      "name": "Adjudicate resume and safe diagnostics",
+      "description": "Resume adjudicate mode from existing successful output lines and include safe adjudicate failure details at the CLI boundary.",
+      "dependencies": [
+        "feat-007"
+      ],
+      "status": "done",
+      "evidence": "2026-08-13: RED `go test ./internal/service -run '^TestAdjudicate' -count=1 -v` failed because adjudicate called the model for an already exported line. GREEN focused test passed after counting existing output lines, appending output, and skipping completed input lines. `go test . -run '^TestRunAdjudicateOutputsMASBFormat$' -count=1 -v`, `go test ./... -count=1`, `go test -race . ./internal/service ./internal/lib/configs -count=1`, `git diff --check`, `go build -trimpath -o ./sendllm .`, and `./init.sh` all exited 0."
+    },
+    {
+      "id": "feat-009",
+      "name": "Adjudicate content rejection continuation",
+      "description": "Classify gateway data inspection failures as content rejection, record rejected adjudicate rows in a sidecar failed JSONL, and continue processing later rows.",
+      "dependencies": [
+        "feat-008"
+      ],
+      "status": "done",
+      "evidence": "2026-08-13: Safe probe showed adjudicate line 15 receives HTTP 400 with `code=type=data_inspection_failed` and no request-shape issue. RED tests `TestOpenAI_CompleteClassifiesContentRiskBadRequest/inspection_code` and `TestAdjudicateRecordsRejectedLineAndContinues` failed, then passed after classification and sidecar failed-output handling. Short live adjudicate verification advanced past line 15, leaving 15 success rows and 1 failed sidecar row. `go test ./internal/facade ./internal/service -run '^(TestOpenAI_CompleteClassifiesContentRiskBadRequest|TestAdjudicate)' -count=1 -v`, `go test ./... -count=1`, `go test -race . ./internal/facade ./internal/service ./internal/lib/configs -count=1`, `git diff --check`, `go build -trimpath -o ./sendllm .`, and `./init.sh` all exited 0."
+    },
+    {
+      "id": "feat-010",
+      "name": "Minimal adjudicate request payload",
+      "description": "Keep messages as the adjudication evidence while removing unrelated passthrough fields and full annotation payloads from model requests.",
+      "dependencies": [
+        "feat-009"
+      ],
+      "status": "done",
+      "evidence": "2026-08-13: Inspection confirmed adjudicate was not sending whole rows but was sending full `annotation`. RED `go test ./internal/service -run '^TestAdjudicateSendsMinimalJudgmentPrompt$' -count=1 -v` failed because `model_judgment` included `method`, `extended_info`, `is_attack`, and `case_type`. GREEN keeps `messages`, `original_label`, `model_label`, and reason fields while sending only `annotation.explanation` as the model judgment. `go test . -run '^TestRunAdjudicateOutputsMASBFormat$' -count=1 -v`, `go test ./... -count=1`, `go test -race . ./internal/service ./internal/lib/configs -count=1`, `git diff --check`, `go build -trimpath -o ./sendllm .`, and `./init.sh` all exited 0."
+    },
+    {
+      "id": "feat-011",
+      "name": "SQLite-backed concurrent adjudicate mode",
+      "description": "Make adjudicate mode use SQLite as its durable progress source, support interruption/resume, reset failed rows on restart, and run model calls with real bounded concurrency.",
+      "dependencies": [
+        "feat-010"
+      ],
+      "status": "done",
+      "evidence": "2026-08-13: adjudicate mode now opens `task.state`, imports differences into SQLite, resets failed rows to pending on startup, runs through the shared Runner with configured limiter concurrency, and atomically exports success/failed JSONL from SQLite terminal state. It sends only required adjudication evidence: `messages`, normalized original/model labels, original reason from `meta.source_fields.reason`, and model reason from `annotation.explanation`. Follow-up on 2026-08-13: Ctrl+C now exports current succeeded adjudicate rows using a bounded terminal export context before returning interrupted. Verification: `go test ./internal/service -run '^TestAdjudicate' -count=1 -v`, `go test ./internal/dao ./internal/service ./internal/lib/configs -count=1`, `go test -race ./internal/service ./internal/dao ./internal/lib/configs -count=1`, `go build -trimpath -o ./sendllm .`, and `./init.sh` all exited 0."
     }
   ]
 }

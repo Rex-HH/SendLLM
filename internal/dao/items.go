@@ -80,6 +80,7 @@ type ExportRecord struct {
 
 // FailedRecord 包含失败文件允许公开的安全诊断字段。
 type FailedRecord struct {
+	RawJSON       []byte
 	TraceID       string
 	ErrorCategory string
 	ErrorSummary  string
@@ -111,6 +112,27 @@ func (s *Store) ResetProcessing(ctx context.Context, taskID string) (int64, erro
 	count, err := result.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("count reset items for task %q: %w", taskID, err)
+	}
+	return count, nil
+}
+
+// ResetFailed 将最终失败记录恢复为待处理，用于任务结束前的保守补跑。
+func (s *Store) ResetFailed(ctx context.Context, taskID string) (int64, error) {
+	result, err := s.db.ExecContext(
+		ctx,
+		`UPDATE items SET state = ?, request_attempts = 0, repair_attempts = 0,
+			next_attempt_at = NULL, annotation = NULL, error_category = NULL, error_summary = NULL
+		WHERE task_id = ? AND state = ?`,
+		ItemPending,
+		taskID,
+		ItemFailed,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("reset failed items for task %q: %w", taskID, err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count reset failed items for task %q: %w", taskID, err)
 	}
 	return count, nil
 }
@@ -327,7 +349,7 @@ func (s *Store) ForEachFailed(
 ) error {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT trace_id, error_category, error_summary, request_attempts + repair_attempts
+		`SELECT raw_json, trace_id, error_category, error_summary, request_attempts + repair_attempts
 		FROM items WHERE task_id = ? AND state = ? ORDER BY input_index`,
 		taskID,
 		ItemFailed,
@@ -340,6 +362,7 @@ func (s *Store) ForEachFailed(
 	for rows.Next() {
 		var record FailedRecord
 		if err := rows.Scan(
+			&record.RawJSON,
 			&record.TraceID,
 			&record.ErrorCategory,
 			&record.ErrorSummary,

@@ -8,30 +8,38 @@ import (
 	"sendllm/internal/dto"
 )
 
-func TestParseSourceResponseOptional(t *testing.T) {
-	tests := []struct {
-		name string
-		give []byte
-	}{
-		{name: "missing", give: []byte(`{"trace_id":"id-1","prompt":"hello","source":"CERT"}`)},
-		{name: "null", give: []byte(`{"trace_id":"id-1","prompt":"hello","response":null}`)},
-		{name: "empty", give: []byte(`{"trace_id":"id-1","prompt":"hello","response":""}`)},
+func TestParseSourceCompactJSONL(t *testing.T) {
+	give := []byte(`{"id":"dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",` +
+		`"source":{"dataset":"dataset","path":"source.json","index":7},` +
+		`"messages":[{"role":"system","content":"ignored"},{"role":"user","content":"review this prompt"},` +
+		`{"role":"assistant","content":"review this response"},{"role":"user","content":"later user"}],` +
+		`"label":{"value":"unsafe","risk_type":"RT10_对抗性攻击","risk_level":"high"},` +
+		`"meta":{"sample_id":"sample-7"}}`)
+
+	got, err := dto.ParseSource(give)
+	if err != nil {
+		t.Fatalf("ParseSource() error = %v", err)
 	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := dto.ParseSource(tt.give)
-			if err != nil {
-				t.Fatalf("ParseSource() error = %v", err)
-			}
-			if got.Response != "" {
-				t.Errorf("Response = %q, want empty", got.Response)
-			}
-			if tt.name == "missing" && string(got.Extra["source"]) != `"CERT"` {
-				t.Errorf("Extra[source] = %s, want CERT", got.Extra["source"])
-			}
-		})
+	if got.TraceID != "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Errorf("TraceID = %q, want compact id", got.TraceID)
+	}
+	if got.Prompt != "review this prompt" || got.Response != "review this response" {
+		t.Errorf("Prompt/Response = (%q, %q), want first user and assistant content", got.Prompt, got.Response)
+	}
+
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatalf("Unmarshal(round trip) error = %v", err)
+	}
+	if string(fields["label"]) != `{"value":"unsafe","risk_type":"RT10_对抗性攻击","risk_level":"high"}` {
+		t.Errorf("label = %s, want original compact label preserved", fields["label"])
+	}
+	if _, ok := fields["trace_id"]; ok {
+		t.Errorf("round trip added legacy trace_id field: %s", fields["trace_id"])
 	}
 }
 
@@ -43,6 +51,12 @@ func TestParseSourceRejectsInvalidContent(t *testing.T) {
 		{name: "missing trace id", give: []byte(`{"prompt":"hello"}`)},
 		{name: "empty content", give: []byte(`{"trace_id":"id-1","prompt":"","response":""}`)},
 		{name: "response has wrong type", give: []byte(`{"trace_id":"id-1","response":1}`)},
+		{
+			name: "compact without usable messages",
+			give: []byte(`{"id":"dataset:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",` +
+				`"source":{"dataset":"dataset","path":"source.json","index":8},` +
+				`"messages":[{"role":"tool","content":"not reviewed"}],"label":{"value":"safe"}}`),
+		},
 	}
 	for _, tt := range tests {
 		tt := tt

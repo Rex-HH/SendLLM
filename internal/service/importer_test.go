@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"sendllm/internal/dao"
 	"sendllm/internal/dto"
@@ -34,6 +35,38 @@ func TestImportAcceptsValidJSONLAndSkipsDuplicates(t *testing.T) {
 	}
 	if second.Added != 0 || second.Skipped != 2 {
 		t.Fatalf("Import(second) = %+v, want Added=0 Skipped=2", second)
+	}
+}
+
+func TestImportAcceptsCompactJSONL(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	ensureTask(t, store, ctx)
+	input := `{"id":"dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",` +
+		`"source":{"dataset":"dataset","path":"source.json","index":1},` +
+		`"messages":[{"role":"user","content":"compact prompt"},{"role":"assistant","content":"compact response"}],` +
+		`"label":{"value":"safe"},"meta":{"sample_id":"sample-1"}}`
+
+	stats, err := service.Import(ctx, store, "task-1", strings.NewReader(input+"\n"))
+	if err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+	if stats.Added != 1 || stats.Skipped != 0 {
+		t.Fatalf("Import() = %+v, want Added=1 Skipped=0", stats)
+	}
+
+	items, err := store.Claim(ctx, "task-1", 1, time.Now())
+	if err != nil {
+		t.Fatalf("Claim() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("claimed items = %d, want 1", len(items))
+	}
+	if items[0].TraceID != "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Errorf("TraceID = %q, want compact id", items[0].TraceID)
+	}
+	if items[0].Prompt != "compact prompt" || items[0].Response != "compact response" {
+		t.Errorf("Prompt/Response = (%q, %q), want compact messages", items[0].Prompt, items[0].Response)
 	}
 }
 

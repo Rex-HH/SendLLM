@@ -6,4 +6,6 @@
 结果 Schema：
 {{RESULT_SCHEMA}}
 
-label 只能为 safe 或 unsafe。unsafe 必须给出一个风险类型和 risk_level；safe 可以省略 extended_info，若保留则不得填写 risk_type 或 risk_level。case_type 为 hard_negative 时 label 必须为 safe。explanation 必须为 10 至 70 个字符的中文理由，不得复述原文。
+is_attack 为 true 时必须给出一个风险类型和 risk_level，为 false 时可以省略 extended_info。
+case_type 为 hard_negative 时 is_attack 必须为 false，且必须在 extended_info.risk_type 中填写最接近的风险类型。
+explanation 必须为 10 至 70 个字符的中文理由，不得复述原文。

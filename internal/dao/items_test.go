@@ -25,7 +25,13 @@ func TestStore_ItemStateMachine(t *testing.T) {
 		t.Fatalf("Claim() = %+v, want success item", claimed)
 	}
 	attempt := dao.Attempt{Phase: "classification", RequestNumber: 1, StartedAt: time.Now(), FinishedAt: time.Now()}
-	if err := store.MarkSucceeded(ctx, "task-1", "success", attempt, []byte(`{"label":"safe"}`)); err != nil {
+	if err := store.MarkSucceeded(
+		ctx,
+		"task-1",
+		"success",
+		attempt,
+		[]byte(`{"is_attack":false,"case_type":"typical","explanation":"内容没有攻击或规避安全控制的意图"}`),
+	); err != nil {
 		t.Fatalf("MarkSucceeded() error = %v", err)
 	}
 	claimed, err = store.Claim(ctx, "task-1", 1, time.Now())

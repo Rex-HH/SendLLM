@@ -54,13 +54,27 @@ export LLM_API_KEY='your-local-secret'
 
 输入每行必须包含非空 `trace_id`，且 `prompt` 与 `response` 至少一个非空。未知输入字段会原样保留。相同配置再次运行时会复用 SQLite 状态：已经提交为 `succeeded` 的记录不会再次请求模型，遗留的 `processing` 记录会恢复为待处理。
 
+正常处理结束后，如果仍存在最终失败记录，程序会自动执行一次保守补跑：把这些失败记录恢复为待处理，使用单并发、较低 RPM 和不少于 8 次请求尝试再跑一轮。补跑只执行一次，避免对稳定失败样本无限重复调用；补跑后仍失败的记录会进入失败文件。
+
 按 `Ctrl-C` 或发送 `SIGTERM` 会停止领取新记录，并在 `runtime.shutdown_timeout` 内等待在途请求完成；超时后才取消剩余调用。程序随后在同一超时配置下导出已经进入终态的记录，并返回退出码 `130`；再次使用相同配置运行即可继续。
+
+## 模型连通性测试
+
+默认测试不会调用真实模型。需要单独测试模型网络连接时，显式打开连通性测试：
+
+```bash
+SENDLLM_MODEL_CONNECTIVITY=1 \
+SENDLLM_CONNECTIVITY_CONFIG=./config/task.yaml \
+zsh -lic 'go test ./internal/facade -run "^TestOpenAI_LiveConnectivity$" -count=1 -v'
+```
+
+`SENDLLM_CONNECTIVITY_CONFIG` 指向任务配置文件；测试只读取其中的模型连接参数并发送一个极小 JSON ping，不导入输入文件、不写 SQLite、不生成结果 JSONL，也不会打印 API Key 或模型原文。
 
 ## 输出与审计
 
-成功输出写入 `task.output`，按原输入顺序排列。每条记录保留未知源字段，模型生成的 `label`、`explanation`、`extended_info` 和 `annotation` 覆盖同名源字段，且 `annotation.method` 为 `auto`。
+成功输出写入 `task.output`，按原输入顺序排列。每条记录保留未知源字段，模型生成的 `is_attack`、`case_type`、`explanation`、`extended_info` 和 `annotation` 覆盖同名源字段，且 `annotation.method` 为 `auto`。
 
-最终失败记录写入同目录失败文件。输出名以 `.jsonl` 结尾时替换为 `.failed.jsonl`；否则追加 `.failed.jsonl`。失败文件只包含 `trace_id`、错误类别、安全诊断摘要和尝试次数。两个文件都先完整写入同目录临时文件，刷新并同步后再替换正式文件。
+最终失败记录写入同目录失败文件。输出名以 `.jsonl` 结尾时替换为 `.failed.jsonl`；否则追加 `.failed.jsonl`。失败文件保留原输入字段，并写入 `is_attack: null`、空 `case_type`、空 `explanation`、空 `extended_info` 和 `annotation.method: manual_required`，同时附带 `error_category`、`error_summary` 和 `attempts`。人工补标时只需要把占位字段改成正式标注，并把 `annotation.method` 改成适合后续流程的人工标记。两个文件都先完整写入同目录临时文件，刷新并同步后再替换正式文件。
 
 SQLite 状态文件保存任务语义指纹、输入顺序、样本状态、请求与修复次数、重试时间、HTTP 状态、错误分类、校验错误、Token 用量、合法标注和模型原始回复。它可能包含敏感审计载荷，必须按数据集同等级别保护，且不得提交到版本库。
 

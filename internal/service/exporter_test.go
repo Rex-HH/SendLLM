@@ -23,41 +23,51 @@ func TestExportWritesOrderedMergedSuccessAndSafeFailures(t *testing.T) {
 	seedExportItems(t, store, ctx,
 		dao.Item{
 			TaskID:     "task-1",
-			TraceID:    "first",
+			TraceID:    "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			InputIndex: 1,
 			RawJSON: []byte(
-				`{"trace_id":"first","prompt":"synthetic prompt one","custom":{"rank":1},` +
-					`"label":"source-label","explanation":"source explanation",` +
-					`"extended_info":{"source":true},"annotation":{"method":"manual"}}`,
+				`{"id":"dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",` +
+					`"messages":[{"role":"user","content":"synthetic prompt one"}],` +
+					`"label":{"value":"safe"},"custom":{"rank":1},"annotation":{"method":"manual"}}`,
 			),
 			Prompt: "synthetic prompt one",
 			State:  dao.ItemPending,
 		},
 		dao.Item{
 			TaskID:     "task-1",
-			TraceID:    "failed",
+			TraceID:    "dataset:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			InputIndex: 2,
-			RawJSON:    []byte(`{"trace_id":"failed","prompt":"synthetic prompt two","private":"must not export"}`),
-			Prompt:     "synthetic prompt two",
-			State:      dao.ItemPending,
+			RawJSON: []byte(
+				`{"id":"dataset:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",` +
+					`"messages":[{"role":"user","content":"synthetic prompt two"}],` +
+					`"label":{"value":"unsafe","risk_type":"RT10_对抗性攻击","risk_level":"high"},` +
+					`"source_extra":"kept for manual"}`,
+			),
+			Prompt: "synthetic prompt two",
+			State:  dao.ItemPending,
 		},
 		dao.Item{
 			TaskID:     "task-1",
-			TraceID:    "third",
+			TraceID:    "dataset:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 			InputIndex: 3,
-			RawJSON:    []byte(`{"trace_id":"third","prompt":"synthetic prompt three","custom":"kept"}`),
-			Prompt:     "synthetic prompt three",
-			State:      dao.ItemPending,
+			RawJSON: []byte(
+				`{"id":"dataset:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",` +
+					`"messages":[{"role":"user","content":"synthetic prompt three"}],` +
+					`"label":{"value":"safe"},"custom":"kept"}`,
+			),
+			Prompt: "synthetic prompt three",
+			State:  dao.ItemPending,
 		},
 	)
 	claimExportItems(t, store, ctx, 3)
-	markExportSucceeded(t, store, ctx, "third", 1, 0,
-		`{"label":"safe","explanation":"synthetic safe explanation"}`,
+	markExportSucceeded(t, store, ctx, "dataset:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", 1, 0,
+		`{"is_attack":false,"case_type":"typical","explanation":"synthetic safe explanation"}`,
 	)
-	markExportFailed(t, store, ctx, "failed", 2, 1, "content_rejected", "provider rejected content")
-	markExportSucceeded(t, store, ctx, "first", 1, 0,
-		`{"label":"unsafe","explanation":"synthetic unsafe explanation",`+
-			`"extended_info":{"risk_type":"test-risk","risk_level":"high","is_attack":true}}`,
+	markExportFailed(t, store, ctx, "dataset:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		2, 1, "content_rejected", "provider rejected content")
+	markExportSucceeded(t, store, ctx, "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 1, 0,
+		`{"is_attack":true,"case_type":"typical","explanation":"synthetic unsafe explanation",`+
+			`"extended_info":{"risk_type":"test-risk","risk_level":"high"}}`,
 	)
 
 	directory := t.TempDir()
@@ -74,38 +84,61 @@ func TestExportWritesOrderedMergedSuccessAndSafeFailures(t *testing.T) {
 	if len(succeeded) != 2 {
 		t.Fatalf("success records = %d, want 2", len(succeeded))
 	}
-	if got := []any{succeeded[0]["trace_id"], succeeded[1]["trace_id"]}; !reflect.DeepEqual(got, []any{"first", "third"}) {
-		t.Errorf("success trace order = %v, want [first third]", got)
+	if got := []any{succeeded[0]["id"], succeeded[1]["id"]}; !reflect.DeepEqual(got, []any{
+		"dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"dataset:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	}) {
+		t.Errorf("success id order = %v, want compact IDs in input order", got)
 	}
 	if !reflect.DeepEqual(succeeded[0]["custom"], map[string]any{"rank": float64(1)}) {
 		t.Errorf("preserved custom field = %#v, want nested rank", succeeded[0]["custom"])
 	}
-	if succeeded[0]["label"] != "unsafe" || succeeded[0]["explanation"] != "synthetic unsafe explanation" {
-		t.Errorf("generated fields = (%v, %v), want model values", succeeded[0]["label"], succeeded[0]["explanation"])
+	if succeeded[0]["is_attack"] != nil || succeeded[0]["case_type"] != nil ||
+		succeeded[0]["explanation"] != nil || succeeded[0]["extended_info"] != nil {
+		t.Errorf("generated fields leaked to top level: %#v", succeeded[0])
 	}
-	extended, ok := succeeded[0]["extended_info"].(map[string]any)
+	if !reflect.DeepEqual(succeeded[0]["label"], map[string]any{"value": "safe"}) {
+		t.Errorf("label = %#v, want original compact label preserved", succeeded[0]["label"])
+	}
+	annotation, ok := succeeded[0]["annotation"].(map[string]any)
+	if !ok || annotation["method"] != "auto" || annotation["is_attack"] != true ||
+		annotation["case_type"] != "typical" || annotation["explanation"] != "synthetic unsafe explanation" {
+		t.Errorf("annotation = %#v, want nested automatic model result", succeeded[0]["annotation"])
+	}
+	extended, ok := annotation["extended_info"].(map[string]any)
 	if !ok || extended["risk_type"] != "test-risk" {
-		t.Errorf("extended_info = %#v, want generated object", succeeded[0]["extended_info"])
-	}
-	if annotation, ok := succeeded[0]["annotation"].(map[string]any); !ok || annotation["method"] != "auto" {
-		t.Errorf("annotation = %#v, want automatic method", succeeded[0]["annotation"])
-	}
-	if _, ok := succeeded[1]["extended_info"]; ok {
-		t.Errorf("safe record retained stale extended_info: %#v", succeeded[1]["extended_info"])
+		t.Errorf("annotation.extended_info = %#v, want generated object", annotation["extended_info"])
 	}
 
 	failed := readJSONLObjects(t, filepath.Join(directory, "result.failed.jsonl"))
 	if len(failed) != 1 {
 		t.Fatalf("failed records = %d, want 1", len(failed))
 	}
-	wantFailed := map[string]any{
-		"trace_id":       "failed",
+	wantAnnotation := map[string]any{
+		"method":         "manual_required",
+		"is_attack":      nil,
+		"case_type":      "",
+		"explanation":    "",
+		"extended_info":  map[string]any{},
 		"error_category": "content_rejected",
 		"error_summary":  "provider rejected content",
 		"attempts":       float64(3),
 	}
-	if !reflect.DeepEqual(failed[0], wantFailed) {
-		t.Errorf("failed record = %#v, want %#v", failed[0], wantFailed)
+	for key, want := range map[string]any{
+		"id":           "dataset:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		"source_extra": "kept for manual",
+		"label": map[string]any{
+			"value":      "unsafe",
+			"risk_type":  "RT10_对抗性攻击",
+			"risk_level": "high",
+		},
+	} {
+		if got := failed[0][key]; !reflect.DeepEqual(got, want) {
+			t.Errorf("failed[%q] = %#v, want %#v", key, got, want)
+		}
+	}
+	if !reflect.DeepEqual(failed[0]["annotation"], wantAnnotation) {
+		t.Errorf("failed annotation = %#v, want %#v", failed[0]["annotation"], wantAnnotation)
 	}
 }
 
@@ -124,7 +157,7 @@ func TestExportAtomicallyReplacesOrPreservesExistingFiles(t *testing.T) {
 		})
 		claimExportItems(t, store, ctx, 1)
 		markExportSucceeded(t, store, ctx, "success", 1, 0,
-			`{"label":"safe","explanation":"synthetic safe explanation"}`,
+			`{"is_attack":false,"case_type":"typical","explanation":"synthetic safe explanation"}`,
 		)
 
 		directory := t.TempDir()
@@ -407,7 +440,7 @@ func prepareExportPublish(t *testing.T) (*dao.Store, context.Context, string, st
 	})
 	claimExportItems(t, store, ctx, 1)
 	markExportSucceeded(t, store, ctx, "success", 1, 0,
-		`{"label":"safe","explanation":"synthetic safe explanation"}`,
+		`{"is_attack":false,"case_type":"typical","explanation":"synthetic safe explanation"}`,
 	)
 	directory := t.TempDir()
 	outputPath := filepath.Join(directory, "result.jsonl")

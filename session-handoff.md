@@ -2,7 +2,33 @@
 
 ## Active Work
 
-No feature is active. `feat-001` through `feat-006` are complete and verified, including the user-approved final re-review exception and a fresh 50-record real-model acceptance with the latest code.
+No feature is active. `feat-011` is complete: adjudicate mode now uses SQLite as its durable progress source, resets failed rows to pending on startup, resumes interrupted work, and runs model calls through the shared Runner/limiter with real configured concurrency.
+
+Adjudicate output files are export artifacts only. `final_8_4.jsonl` and its failed sidecar can be deleted and regenerated from SQLite; deleting `task-003-dark-adjudicate.db` starts the adjudicate task from scratch. Restarting with the same semantic config will not re-send `succeeded` rows, will recover interrupted `processing` rows, and will retry rows previously marked `failed`.
+
+Ctrl+C now performs a bounded terminal export for adjudicate mode: the Runner stops accepting new work, in-flight successful rows already committed to SQLite are exported to `final_8_4.jsonl` in the normal output format, and then the CLI returns interrupted.
+
+The adjudicate model request includes only required judgment evidence: `messages`, normalized `original_label`, normalized `model_label`, original reason from `meta.source_fields.reason`, and model reason from `annotation.explanation`. It does not send the whole row, `source`, `meta`, top-level `label`, or full `annotation`.
+
+No feature is active. `feat-010` is complete: adjudicate model requests now keep `messages` as the factual judgment basis while removing unrelated passthrough fields and full annotation payloads.
+
+`feat-009` is complete: adjudicate mode now treats gateway `data_inspection_failed` HTTP 400 responses as per-row `content_rejected` failures, writes them to a sidecar failed JSONL, and continues processing later rows.
+
+`feat-008` is also complete: adjudicate mode resumes from existing successful output lines, appends new results, and reports safe line/category error details through the CLI failure log.
+
+Current adjudicate config is `config/task.003.dark.adjudicate.yaml`, with task ID `task-003-dark-adjudicate`, state `data/task-003-dark-adjudicate/task-003-dark-adjudicate.db`, output `data/task-003-dark-adjudicate/final_8_4.jsonl`, `runtime.concurrency: 400`, and `requests_per_minute: 40000`. The rebuilt `./sendllm` will use those values for real parallel requests when run with `zsh -lic './sendllm -mode adjudicate -config ./config/task.003.dark.adjudicate.yaml'`.
+
+The adjudicate prompt content changed after those 15 success rows were produced. Continuing is resumable and safe, but a strictly uniform batch should regenerate the current output files from scratch.
+
+No feature is active. `feat-007` is complete: SendLLM now reads upstream `compact_jsonl` records by using top-level `id` as the internal stable item ID, extracting prompt/response only from `messages`, and exporting SendLLM's judgment as a top-level `annotation` object without changing other source fields.
+
+The approved design is recorded in `docs/superpowers/specs/2026-08-11-compact-jsonl-input-design.md`, and the implementation plan is in `docs/superpowers/plans/2026-08-11-compact-jsonl-input.md`. Baseline `./init.sh` exited 0 on 2026-08-11 before code edits; final `./init.sh` also exited 0 after implementation.
+
+Previous state: `feat-001` through `feat-006` are complete and verified, including the user-approved final re-review exception and a fresh 50-record real-model acceptance with the latest code.
+
+Latest batch triage on 2026-08-10 reduced the 52 failed records in `task-2026-08-07-002` to one provider-filtered record. The recovered success output is `data/task-002/v2_normal_1000_prompt_response_output.recovered.jsonl` with 999 rows. The remaining failed summary is `data/task-002/v2_normal_1000_prompt_response_output.recovered.failed.jsonl` with one `content_rejected` row.
+
+The failed-record cover workflow is now part of the normal CLI flow. After a completed run still has failures, the CLI performs one conservative cover retry before final export. Failed JSONL rows are now manual-supplement templates that preserve source fields and include empty annotation fields plus safe diagnostics.
 
 ## Current Objective
 
@@ -12,6 +38,33 @@ No feature is active. `feat-001` through `feat-006` are complete and verified, i
 
 ## Completed This Session
 
+- [x] Reproduced the adjudicate resume bug with a RED test: an existing first output row still caused the model to be called for the first input row.
+- [x] Fixed adjudicate mode to count existing valid output JSONL lines, open output in append mode, and skip completed input lines while preserving original input line numbers for errors.
+- [x] Added CLI-level safe error details for adjudicate failures without logging raw dataset payloads or model output.
+- [x] Rebuilt the local `./sendllm` binary and verified the current production adjudicate output/input counts: 14 completed rows out of 8879 input rows.
+- [x] Safely probed line 15 and confirmed the provider returned HTTP 400 with `code=type=data_inspection_failed`; no raw prompt, response, model output, or API Key was printed.
+- [x] Added RED/GREEN coverage so `data_inspection_failed` is classified as `content_rejected`.
+- [x] Added RED/GREEN coverage so adjudicate records single-row `content_rejected` failures to `final_8_4.jsonl.failed` and continues later rows.
+- [x] Rebuilt `./sendllm`, ran a short real adjudicate smoke, confirmed it advanced past line 15, then interrupted the smoke process with SIGINT.
+- [x] Confirmed the prior adjudicate request did not send full JSONL rows, but did send complete `annotation`.
+- [x] Added RED/GREEN coverage that model requests retain `messages` and labels while excluding `source`, `meta`, top-level `label`, and nonessential `annotation` fields.
+- [x] Updated the adjudicate system prompt to describe the minimized input shape.
+- [x] Rebuilt the local `./sendllm` binary after the minimal-payload change.
+- [x] Replaced adjudicate output-file resume with SQLite-backed resume/export: import differences into SQLite, reset failed rows on startup, run shared Runner, and atomically regenerate success/failed output files from SQLite terminal state.
+- [x] Added coverage proving SQLite state wins over existing output files, succeeded rows are not re-sent, failed rows are retried on restart, and adjudicate honors configured limiter concurrency.
+- [x] Added original-label reason extraction from `meta.source_fields.reason` so the adjudicate request contains both original and model reasons without sending unrelated metadata.
+- [x] Rebuilt `./sendllm` after the SQLite-backed adjudicate change.
+- [x] Added RED/GREEN coverage and implementation so adjudicate exports current succeeded rows after manual cancellation.
+- [x] Rebuilt `./sendllm` after the Ctrl+C terminal export change.
+- [x] Diagnosed the latest 52 failed records without printing raw dataset payloads. Root causes were mostly retry exhaustion from provider 429/502, plus one retryable malformed provider response and one stable provider `content_filter`.
+- [x] Terminated stale stopped local `sendllm` processes that were holding old task resources.
+- [x] Extracted failed records into local retry inputs, ran conservative retry tasks, and recovered 51 of 52 failed records through the real configured gateway.
+- [x] Added a RED/GREEN regression and minimal fix so `ProviderMalformedResponse` is retryable.
+- [x] Re-exported the original 948 succeeded records from SQLite and merged recovered outputs into a deterministic 999-success / 1-failed coverage set.
+- [x] Merged the failed-record cover workflow into `run`: one completed run can reset final failed records and retry them once with conservative single-concurrency settings before export.
+- [x] Changed failed export rows to preserve original source fields and include `is_attack: null`, empty `case_type`, empty `explanation`, empty `extended_info`, `annotation.method: manual_required`, and safe failure diagnostics.
+- [x] Completed `feat-007`: compact `id` maps to internal `trace_id`, prompt/response are extracted from first user/assistant messages, original compact fields are preserved, and generated results live under nested `annotation`.
+- [x] Updated `config/output-jsonl-schema.json`, CLI integration tests, and opt-in live acceptance parsing for nested `annotation`.
 - [x] Completed the user-approved Harness exception for the two load-bearing re-review findings.
 - [x] Made completed-result progress bookkeeping independent of caller claim cancellation, preserving graceful peer drain and the original caller cause.
 - [x] Kept completed-result progress queries caller-cancelable and converted caller-canceled progress errors into bounded graceful drain, so blocked bookkeeping still respects `shutdown_timeout`.
@@ -59,6 +112,37 @@ No feature is active. `feat-001` through `feat-006` are complete and verified, i
 
 | Check | Command | Result | Notes |
 |---|---|---|---|
+| Adjudicate resume RED | `go test ./internal/service -run '^TestAdjudicate' -count=1 -v` | fail, exit 1 | Existing output was ignored and the first input row was sent to the model again. |
+| Adjudicate focused GREEN | same focused command | pass, exit 0 | Existing valid output lines are preserved, input lines 1..N are skipped, and new rows are appended. |
+| Adjudicate CLI regression | `go test . -run '^TestRunAdjudicateOutputsMASBFormat$' -count=1 -v` | pass, exit 0 | MASB 8-4 output shape remains valid for adjudicate mode. |
+| Adjudicate wider gates | `go test ./... -count=1`; `go test -race . ./internal/service ./internal/lib/configs -count=1`; `git diff --check`; `go build -trimpath -o ./sendllm .`; `./init.sh` | pass, exit 0 | The local binary was rebuilt after verification. |
+| Adjudicate inspection classification RED/GREEN | `go test ./internal/facade -run '^TestOpenAI_CompleteClassifiesContentRiskBadRequest$/inspection_code$' -count=1 -v` | RED exit 1; GREEN exit 0 | RED classified gateway inspection failure as `bad_request`; GREEN classifies it as `content_rejected`. |
+| Adjudicate per-row failed sidecar RED/GREEN | `go test ./internal/service -run '^TestAdjudicateRecordsRejectedLineAndContinues$' -count=1 -v` | RED exit 1; GREEN exit 0 | RED stopped the whole task on row rejection; GREEN records one safe failed row and continues successful rows. |
+| Adjudicate real smoke | `zsh -lic './sendllm -mode adjudicate -config ./config/task.003.dark.adjudicate.yaml'` | interrupted after progress, exit 130 | It no longer failed at line 15; after manual interrupt, success output had 15 rows and failed sidecar had 1 row. |
+| Adjudicate continuation final gates | `go test ./internal/facade ./internal/service -run '^(TestOpenAI_CompleteClassifiesContentRiskBadRequest|TestAdjudicate)' -count=1 -v`; `go test ./... -count=1`; `go test -race . ./internal/facade ./internal/service ./internal/lib/configs -count=1`; `git diff --check`; `go build -trimpath -o ./sendllm .`; `./init.sh` | pass, exit 0 | The rebuilt local binary contains the continuation fix. |
+| Adjudicate minimal-payload RED/GREEN | `go test ./internal/service -run '^TestAdjudicateSendsMinimalJudgmentPrompt$' -count=1 -v` | RED exit 1; GREEN exit 0 | RED showed full `annotation` in the model request; GREEN keeps `messages`, labels, and reasons only. |
+| Adjudicate minimal-payload gates | `go test . -run '^TestRunAdjudicateOutputsMASBFormat$' -count=1 -v`; `go test ./... -count=1`; `go test -race . ./internal/service ./internal/lib/configs -count=1`; `git diff --check`; `go build -trimpath -o ./sendllm .`; `./init.sh` | pass, exit 0 | No real model calls were made for this minimal-payload verification. |
+| SQLite-backed adjudicate focused | `GOCACHE=/private/tmp/sendllm-gocache go test ./internal/service -run '^(TestAdjudicate|TestRunner_UsesCustomClassificationRequest)' -count=1 -v` | pass, exit 0 | Covers SQLite resume over output file contents, failed reset/retry, both judgment reasons in request payload, and configured real concurrency. |
+| SQLite-backed adjudicate affected packages | `GOCACHE=/private/tmp/sendllm-gocache go test ./internal/dao ./internal/service ./internal/lib/configs -count=1` | pass, exit 0 | DAO/service/config behavior passes without real model calls. |
+| SQLite-backed adjudicate race | `GOCACHE=/private/tmp/sendllm-gocache go test -race ./internal/service ./internal/dao ./internal/lib/configs -count=1` | pass, exit 0 | Affected concurrency and state packages pass under race detector. |
+| SQLite-backed adjudicate build/hygiene | `GOCACHE=/private/tmp/sendllm-gocache go build -trimpath -o ./sendllm .`; `git diff --check` | pass, exit 0 | Local CLI binary rebuilt. |
+| Adjudicate Ctrl+C export RED/GREEN | `go test ./internal/service -run '^TestAdjudicateExportsSucceededRowsAfterCancellation$' -count=1 -v` | RED exit 1; GREEN exit 0 | RED had no output file after cancellation; GREEN exports the succeeded row using a bounded terminal export context. |
+| Adjudicate Ctrl+C focused gates | `go test ./internal/service -run '^TestAdjudicate' -count=1 -v`; `go test ./internal/dao ./internal/service ./internal/lib/configs -count=1`; `go test -race ./internal/service ./internal/dao ./internal/lib/configs -count=1`; `go build -trimpath -o ./sendllm .` | pass, exit 0 | Local CLI binary rebuilt after the interruption export change. |
+| Current full gate | `./init.sh` | pass, exit 0 | Formatting, `go test ./...`, `go test -race ./...`, and `go vet ./...` passed. |
+| Compact JSONL baseline | `./init.sh` | pass, exit 0 | Formatting, all tests, race tests, and vet passed before `feat-007` edits. |
+| Compact JSONL RED | `go test ./internal/dto ./internal/service -run 'Test(ParseSourceCompactJSONL|ParseSourceRejectsInvalidContent|ImportAcceptsCompactJSONL|ExportWritesOrderedMergedSuccessAndSafeFailures)' -count=1 -v` | fail, exit 1 | DTO still required legacy `trace_id`; Import rejected compact rows; Export removed compact `label` and wrote generated fields at top level. |
+| Compact JSONL focused GREEN | same focused command | pass, exit 0 | Compact parsing, compact import, and nested annotation export passed. |
+| Compact JSONL wider tests | `go test ./... -count=1` | pass, exit 0 | CLI integration tests now use compact input and nested annotation assertions. |
+| Compact JSONL full gate | `./init.sh` | pass, exit 0 | Formatting, all tests, full race tests, and `go vet ./...` passed after implementation. |
+| Latest 52 failure summary | Python failed-JSONL counter and SQLite metadata queries against `data/task-002/task-2026-08-07-002.db` | analyzed | 52 failed: 35 `rate_limited`, 12 `malformed_response`, 2 `invalid_result`, 2 `server`, 1 `content_rejected`; raw prompt/response and raw model content were not printed. |
+| Latest 52 retry | `zsh -lic 'exec ./sendllm -config ./config/task.retry-52.yaml'` | exit 2 | Real gateway run recovered 50 of 52 with conservative concurrency/RPM; output `added=52 skipped=0 succeeded=50 failed=2`. |
+| Remaining 2 retry | `zsh -lic 'exec ./sendllm -config ./config/task.retry-2.yaml'` | exit 2 | Real gateway run recovered 1 of 2; one row remained `content_rejected` with provider `finish_reason=content_filter`. |
+| Re-export original state | `zsh -lic 'exec ./sendllm -config ./config/task.002.yaml'` | exit 2 | No model calls for terminal records; output `added=0 skipped=1000 succeeded=948 failed=52`, restoring the original 948-row export from SQLite. |
+| Recovered output coverage | local Python trace coverage check | pass | `input=1000 output=999 failed=1 covered=1000 missing=0 overlap=0`; output rows contain required annotation fields and no top-level `label`. |
+| Malformed retry RED/GREEN | `go test ./internal/service -run '^TestClassifyFailure$/malformed_provider_response$' -count=1 -v` | RED exit 1; GREEN exit 0 | RED showed `Retry:false` for `malformed_response`; GREEN showed it is retryable. |
+| Integrated cover RED/GREEN | `go test . -run '^TestRunCoversFinalFailuresBeforeExport$' -count=1 -v` | RED exit 1; GREEN exit 0 | RED exported a failed 429 after one call; GREEN performed the integrated cover retry, made two provider calls, and exported a succeeded row with an empty failed file. |
+| Failed template RED/GREEN | `go test ./internal/service -run '^TestExportWritesOrderedMergedSuccessAndSafeFailures$' -count=1 -v` | RED exit 1; GREEN exit 0 | RED showed failed rows lacked source fields and placeholders; GREEN preserved source fields and wrote manual supplement fields. |
+| Latest full gate | `./init.sh` | pass, exit 0 | Formatting, all tests, race tests, and `go vet ./...` passed after the retry fix. |
 | Re-review Runner RED/GREEN | `go test ./internal/service -run '^TestRunner_RunDrainsPeerWhenProgressRacesWithCallerCancellation$' -count=1 -timeout=10s -v` | RED exit 1; GREEN exit 0 | RED peer received caller cause during progress; GREEN preserved the cause while both items succeeded and all workers exited. |
 | Re-review shutdown bound RED/GREEN | `go test ./internal/service -run '^TestRunner_RunBoundsDrainWhenProgressQueryBlocksAfterCallerCancellation$' -count=1 -timeout=5s -v` | RED exit 1; GREEN exit 0 | RED stayed blocked in progress bookkeeping past `shutdown_timeout`; GREEN entered bounded drain. |
 | Re-review DAO RED/GREEN | `go test ./internal/dao -run '^TestImport_Add(LazilyMigratesLegacyHashForExactSource|RejectsDifferentSourceDespiteLegacyHashCollision)$' -count=1 -v` | RED exit 1; GREEN exit 0 | Exact legacy large integer and `1.0` sources migrate; adjacent-integer legacy collision remains `ErrTraceConflict`. |
@@ -166,6 +250,7 @@ No feature is active. `feat-001` through `feat-006` are complete and verified, i
 ## Blockers / Risks
 
 - Provider RPM/TPM remain undocumented; transient 429s occurred during acceptance even at concurrency 4 and were recovered by durable retries.
+- `config/task.003.dark.adjudicate.yaml` currently uses `runtime.concurrency: 400` and `requests_per_minute: 40000`; this is true concurrent request load. Lower these values and restart if 429s climb.
 - The original design target of concurrency 64 is superseded by real-gateway evidence. The current formal recommendation is concurrency 4 with continued calibration against observed 429s.
 - OpenAI-compatible capability is provider-specific. Do not switch this task back to `json_schema` without a new state file and a fresh capability check.
 - Runner shutdown assumes `Completer.Complete` honors context; Go cannot forcibly stop an implementation that ignores cancellation forever.
@@ -181,4 +266,4 @@ No feature is active. `feat-001` through `feat-006` are complete and verified, i
 
 ## Recommended Next Step
 
-- Preserve the local acceptance artifacts outside Git. Before the first 30,000-record batch, confirm quota, choose a new task/state path, start at concurrency 4, and continue calibration while keeping payload-free logs.
+- Resume adjudicate mode with `zsh -lic './sendllm -mode adjudicate -config ./config/task.003.dark.adjudicate.yaml'`. Delete only the output files when you want a clean re-export; delete the SQLite state file only when you intentionally want to recompute every row from scratch. Pressing Ctrl+C will now export currently succeeded rows before exiting.

@@ -35,6 +35,7 @@ type RunnerConfig struct {
 	RetryPolicy          RetryPolicy
 	Jitter               func(time.Duration) time.Duration
 	OnProgress           func(Summary)
+	BuildRequest         func(dao.Item) (dto.CompletionRequest, error)
 }
 
 // Runner 协调可恢复领取、模型调用和持久化状态迁移。
@@ -90,6 +91,9 @@ func NewRunner(cfg RunnerConfig) (*Runner, error) {
 	}
 	cfg.SystemPrompt = append([]byte(nil), cfg.SystemPrompt...)
 	cfg.Schema = append(json.RawMessage(nil), cfg.Schema...)
+	if cfg.BuildRequest == nil {
+		cfg.BuildRequest = defaultClassificationRequest(cfg.SystemPrompt, cfg.Scene, cfg.Schema, cfg.Mode)
+	}
 	return &Runner{cfg: cfg, store: cfg.Store}, nil
 }
 
@@ -313,7 +317,7 @@ func (r *Runner) worker(
 
 func (r *Runner) processItem(ctx context.Context, item dao.Item) error {
 	requestNumber := item.RequestAttempts + 1
-	request, err := r.classificationRequest(item)
+	request, err := r.cfg.BuildRequest(item)
 	if err != nil {
 		return err
 	}
@@ -478,23 +482,42 @@ func (r *Runner) complete(
 	return response, attempt, err
 }
 
-func (r *Runner) classificationRequest(item dao.Item) (dto.CompletionRequest, error) {
+func defaultClassificationRequest(
+	systemPrompt []byte,
+	scene string,
+	schema json.RawMessage,
+	mode string,
+) func(dao.Item) (dto.CompletionRequest, error) {
+	systemPrompt = append([]byte(nil), systemPrompt...)
+	schema = append(json.RawMessage(nil), schema...)
+	return func(item dao.Item) (dto.CompletionRequest, error) {
+		return classificationRequest(item, systemPrompt, scene, schema, mode)
+	}
+}
+
+func classificationRequest(
+	item dao.Item,
+	systemPrompt []byte,
+	scene string,
+	schema json.RawMessage,
+	mode string,
+) (dto.CompletionRequest, error) {
 	input := dto.SourceSample{
 		TraceID:  item.TraceID,
 		Prompt:   item.Prompt,
 		Response: item.Response,
-	}.ModelInput(r.cfg.Scene)
+	}.ModelInput(scene)
 	encoded, err := json.Marshal(input)
 	if err != nil {
 		return dto.CompletionRequest{}, fmt.Errorf("encode model input for trace_id %q: %w", item.TraceID, err)
 	}
 	return dto.CompletionRequest{
 		Messages: []dto.Message{
-			{Role: "system", Content: string(r.cfg.SystemPrompt)},
+			{Role: "system", Content: string(systemPrompt)},
 			{Role: "user", Content: string(encoded)},
 		},
-		Schema: append(json.RawMessage(nil), r.cfg.Schema...),
-		Mode:   r.cfg.Mode,
+		Schema: append(json.RawMessage(nil), schema...),
+		Mode:   mode,
 	}, nil
 }
 

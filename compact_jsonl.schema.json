@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llmguardclean.local/dataprep/schemas/compact_jsonl.v1.schema.json",
+  "title": "LLMGuardClean Dataprep Compact JSONL Record",
+  "description": "Schema for one line in compact_jsonl output. A complete output file is newline-delimited JSON where every line validates against this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "source", "messages", "label"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[^:]+:[a-f0-9]{64}$",
+      "description": "Stable record id: <dataset_name>:<sha256(dataset_name + normalized_messages + source_identity)>."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset", "path", "index"],
+      "properties": {
+        "dataset": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Configured dataset name."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Source file path used by the dataset reader."
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Zero-based record index in the streaming source sequence."
+        }
+      }
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Cleaned conversation messages in source order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "content"],
+        "properties": {
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Message role, usually user or assistant. The schema allows future roles."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Message content after source-shape projection."
+          }
+        }
+      }
+    },
+    "label": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "enum": ["safe", "unsafe"],
+          "description": "Normalized safety label."
+        },
+        "risk_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Risk category for unsafe samples. Omitted for safe samples."
+        },
+        "risk_level": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Risk severity for unsafe samples when available. Omitted for safe samples."
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Extensible metadata. Consumers should depend on known keys and tolerate additional keys.",
+      "properties": {
+        "sample_id": {
+          "type": ["string", "number", "integer", "boolean"],
+          "description": "Source sample identifier, preserved when available."
+        },
+        "sample_type": {
+          "type": ["string", "number", "integer", "boolean"],
+          "description": "Source sample type, preserved when available."
+        },
+        "split": {
+          "type": ["string", "number", "integer", "boolean"],
+          "description": "Source split, preserved when available."
+        },
+        "scenario": {
+          "type": ["string", "number", "integer", "boolean"],
+          "description": "Source scenario, preserved when available."
+        },
+        "severity": {
+          "type": ["string", "number", "integer", "boolean"],
+          "description": "Source severity, preserved when available."
+        },
+        "language": {
+          "type": ["string", "number", "integer", "boolean"],
+          "description": "Source language, preserved when available."
+        },
+        "content_presence": {
+          "type": "string",
+          "enum": ["prompt", "response", "pair", "other"],
+          "description": "Message shape inferred by the message_projection rule."
+        },
+        "source_fields": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Non-redundant source fields not already represented by id, source, messages, label, or top-level meta keys."
+        },
+        "findings": {
+          "type": "array",
+          "description": "Deterministic preprocessing findings.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "severity", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "severity": {
+                "type": "string",
+                "minLength": 1
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "metadata": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

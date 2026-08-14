@@ -92,7 +92,7 @@ func TestRunner_RunDrainsPeerWhenProgressRacesWithCallerCancellation(t *testing.
 	peerCanceled := make(chan error, 1)
 	peerExited := make(chan struct{})
 	response := dto.CompletionResponse{
-		Content:     []byte(`{"label":"safe","explanation":"synthetic"}`),
+		Content:     []byte(`{"is_attack":false,"case_type":"typical","explanation":"内容没有攻击或规避安全控制的意图"}`),
 		RawResponse: []byte(`{"synthetic":"response"}`),
 	}
 	runner := newRunnerInternal(t, store, runnerCompleterFunc(
@@ -203,7 +203,7 @@ func TestRunner_RunBoundsDrainWhenProgressQueryBlocksAfterCallerCancellation(t *
 	peerStarted := make(chan struct{})
 	peerCanceled := make(chan error, 1)
 	response := dto.CompletionResponse{
-		Content:     []byte(`{"label":"safe","explanation":"synthetic"}`),
+		Content:     []byte(`{"is_attack":false,"case_type":"typical","explanation":"内容没有攻击或规避安全控制的意图"}`),
 		RawResponse: []byte(`{"synthetic":"response"}`),
 	}
 	runner := newRunnerInternal(t, store, runnerCompleterFunc(

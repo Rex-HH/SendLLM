@@ -20,6 +20,8 @@ func TestLoad(t *testing.T) {
 		{name: "applies defaults", yaml: validYAML(""), wantErr: nil},
 		{name: "rejects zero concurrency", yaml: validYAML("concurrency: 0"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects concurrency above account ceiling", yaml: validYAML("concurrency: 501"), wantErr: configs.ErrInvalidConfig},
+		{name: "rejects zero cover concurrency", yaml: validYAML("cover_concurrency: 0"), wantErr: configs.ErrInvalidConfig},
+		{name: "rejects negative cover RPM", yaml: validYAML("cover_requests_per_minute: -1"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects missing result schema", yaml: validYAML("schema_file: missing.json"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects retry maximum below one", yaml: validYAML("request_max_attempts: 0"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects missing risk placeholder", yaml: validYAML("system_file: missing-risk.txt"), wantErr: configs.ErrInvalidConfig},
@@ -45,6 +47,13 @@ func TestLoad(t *testing.T) {
 			if got.Runtime.Concurrency != 64 {
 				t.Errorf("Concurrency = %d, want 64", got.Runtime.Concurrency)
 			}
+			if got.Runtime.CoverConcurrency != 0 || got.Runtime.CoverRequestsPerMinute != 0 {
+				t.Errorf(
+					"cover limits = %d/%d, want unset zeros",
+					got.Runtime.CoverConcurrency,
+					got.Runtime.CoverRequestsPerMinute,
+				)
+			}
 			if got.Runtime.ShutdownTimeout != 30*time.Second {
 				t.Errorf("ShutdownTimeout = %s, want 30s", got.Runtime.ShutdownTimeout)
 			}
@@ -58,6 +67,20 @@ func TestLoad(t *testing.T) {
 				t.Error("SystemPrompt does not contain the substituted risk types")
 			}
 		})
+	}
+}
+
+func TestLoadAcceptsConfiguredCoverRetryLimits(t *testing.T) {
+	got, err := configs.Load(writeConfig(t, validYAML("cover_concurrency: 2\n  cover_requests_per_minute: 18")))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.Runtime.CoverConcurrency != 2 || got.Runtime.CoverRequestsPerMinute != 18 {
+		t.Errorf(
+			"cover limits = %d/%d, want 2/18",
+			got.Runtime.CoverConcurrency,
+			got.Runtime.CoverRequestsPerMinute,
+		)
 	}
 }
 

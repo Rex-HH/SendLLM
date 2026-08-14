@@ -65,7 +65,7 @@ func ClassifyFailure(err error) FailureDecision {
 func classifyProviderFailure(err *dto.ProviderError) FailureDecision {
 	decision := FailureDecision{Category: string(err.Kind), RetryAfter: err.RetryAfter}
 	switch err.Kind {
-	case dto.ProviderNetwork, dto.ProviderTimeout, dto.ProviderServer:
+	case dto.ProviderNetwork, dto.ProviderTimeout, dto.ProviderServer, dto.ProviderMalformedResponse:
 		decision.Retry = true
 	case dto.ProviderRateLimited:
 		decision.Retry = true

@@ -18,7 +18,8 @@ type ExtendedInfo struct {
 
 // Annotation 是模型返回的结构化安全标注。
 type Annotation struct {
-	Label        string        `json:"label"`
+	IsAttack     bool          `json:"is_attack"`
+	CaseType     string        `json:"case_type"`
 	Explanation  string        `json:"explanation"`
 	ExtendedInfo *ExtendedInfo `json:"extended_info,omitempty"`
 }
@@ -36,7 +37,11 @@ func (a *Annotation) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return err
 	}
-	label, err := takeAnnotationString(fields, "label", false)
+	isAttack, err := takeAnnotationBool(fields, "is_attack")
+	if err != nil {
+		return err
+	}
+	caseType, err := takeAnnotationString(fields, "case_type", false)
 	if err != nil {
 		return err
 	}
@@ -57,7 +62,8 @@ func (a *Annotation) UnmarshalJSON(raw []byte) error {
 	if len(fields) != 0 {
 		return fmt.Errorf("annotation has unknown field %q", firstKey(fields))
 	}
-	a.Label = label
+	a.IsAttack = isAttack
+	a.CaseType = caseType
 	a.Explanation = explanation
 	a.ExtendedInfo = extendedInfo
 	return nil
@@ -157,6 +163,19 @@ func takeAnnotationString(fields map[string]json.RawMessage, name string, option
 	var decoded string
 	if err := json.Unmarshal(value, &decoded); err != nil {
 		return "", fmt.Errorf("annotation %s must be a string", name)
+	}
+	return decoded, nil
+}
+
+func takeAnnotationBool(fields map[string]json.RawMessage, name string) (bool, error) {
+	value, ok := fields[name]
+	delete(fields, name)
+	if !ok {
+		return false, fmt.Errorf("annotation %s is required", name)
+	}
+	var decoded bool
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return false, fmt.Errorf("annotation %s must be a boolean", name)
 	}
 	return decoded, nil
 }

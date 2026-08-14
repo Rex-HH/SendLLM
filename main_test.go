@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"sendllm/internal/lib/configs"
 )
 
 const (
@@ -22,13 +24,14 @@ const (
 	cliAPIKeyEnv   = "SENDLLM_TEST_API_KEY"
 	cliPrompt      = "fixture prompt that must stay private"
 	cliResponse    = "fixture response that must stay private"
-	cliModelOutput = `{"label":"safe","explanation":"synthetic safe explanation"}`
+	cliModelOutput = `{"is_attack":false,"case_type":"typical","explanation":"synthetic safe explanation"}`
 	cliSchema      = `{
   "type": "object",
   "additionalProperties": false,
-  "required": ["label", "explanation"],
+  "required": ["is_attack", "case_type", "explanation"],
   "properties": {
-    "label": {"enum": ["safe", "unsafe"]},
+    "is_attack": {"type": "boolean"},
+    "case_type": {"type": "string", "enum": ["typical", "borderline", "variant", "hard_negative"]},
     "explanation": {"type": "string"},
     "extended_info": {"type": "object"}
   }
@@ -49,7 +52,9 @@ func TestRunReturnsZeroAndWiresConfiguredSchema(t *testing.T) {
 		t.Errorf("run() code = %d, want 0; stderr=%q", code, stderr.String())
 	}
 	records := readMainJSONL(t, paths.output)
-	if len(records) != 1 || records[0]["trace_id"] != "trace-success" || records[0]["label"] != "safe" {
+	annotation, _ := records[0]["annotation"].(map[string]any)
+	if len(records) != 1 || records[0]["id"] != "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
+		annotation["is_attack"] != false || annotation["method"] != "auto" {
 		t.Errorf("output records = %#v, want one successful trace", records)
 	}
 	assertNoCLIPayload(t, stdout.String(), stderr.String())
@@ -72,7 +77,7 @@ func TestRunWiresConfiguredStructuredOutputMode(t *testing.T) {
 }
 
 func TestRunReturnsTwoWhenFinalFailuresExist(t *testing.T) {
-	server := newCLIProvider(t, `{"label":"invalid","explanation":"synthetic invalid explanation"}`, "json_schema")
+	server := newCLIProvider(t, `{"is_attack":true,"case_type":"typical","explanation":"synthetic invalid explanation"}`, "json_schema")
 	defer server.Close()
 	t.Setenv(cliAPIKeyEnv, cliAPIKey)
 	paths := writeCLIConfig(t, server.URL, cliAPIKeyEnv)
@@ -85,10 +90,130 @@ func TestRunReturnsTwoWhenFinalFailuresExist(t *testing.T) {
 		t.Errorf("run() code = %d, want 2; stderr=%q", code, stderr.String())
 	}
 	failed := readMainJSONL(t, paths.failed)
-	if len(failed) != 1 || failed[0]["trace_id"] != "trace-success" {
+	if len(failed) != 1 || failed[0]["id"] != "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Errorf("failed records = %#v, want one safe diagnostic", failed)
 	}
 	assertNoCLIPayload(t, stdout.String(), stderr.String())
+}
+
+func TestRunCoversFinalFailuresBeforeExport(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls++
+		if calls == 1 {
+			http.Error(writer, "slow down", http.StatusTooManyRequests)
+			return
+		}
+		writeCLICompletion(t, writer, cliModelOutput)
+	}))
+	defer server.Close()
+	t.Setenv(cliAPIKeyEnv, cliAPIKey)
+	paths := writeCLIConfig(t, server.URL, cliAPIKeyEnv)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run(context.Background(), []string{"-config", paths.config}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Errorf("run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if calls != 2 {
+		t.Errorf("provider calls = %d, want initial failure and cover retry", calls)
+	}
+	records := readMainJSONL(t, paths.output)
+	if len(records) != 1 || records[0]["id"] != "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
+		t.Errorf("output records = %#v, want covered success", records)
+	}
+	if failed := readMainJSONL(t, paths.failed); len(failed) != 0 {
+		t.Errorf("failed records = %#v, want empty after cover", failed)
+	}
+	assertNoCLIPayload(t, stdout.String(), stderr.String())
+}
+
+func TestRunAdjudicateOutputsMASBFormat(t *testing.T) {
+	modelOutput := `{"is_attack":true,"case_type":"typical","explanation":"综合判断该样本存在提示注入风险。","extended_info":{"risk_type":"test-risk","risk_level":"high","attack_scenario":"instruction_override","other":""}}`
+	server := newCLIProvider(t, modelOutput, "json_schema")
+	defer server.Close()
+	t.Setenv(cliAPIKeyEnv, cliAPIKey)
+	paths := writeCLIConfig(t, server.URL, cliAPIKeyEnv)
+	writeMainFile(t, paths.input, differenceCLIInput())
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run(context.Background(), []string{"-mode", "adjudicate", "-config", paths.config}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	records := readMainJSONL(t, paths.output)
+	if len(records) != 1 {
+		t.Fatalf("output records = %d, want 1", len(records))
+	}
+	record := records[0]
+	if record["trace_id"] != "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ||
+		record["label"] != "unsafe" || record["prompt"] != cliPrompt || record["response"] != cliResponse {
+		t.Errorf("MASB core fields = %#v", record)
+	}
+	extended, _ := record["extended_info"].(map[string]any)
+	if extended["risk_type"] != "test-risk" || extended["risk_level"] != "high" ||
+		extended["case_type"] != "typical" || extended["is_attack"] != true {
+		t.Errorf("extended_info = %#v", extended)
+	}
+	meta, _ := record["annotation"].(map[string]any)
+	if meta["method"] != "auto" {
+		t.Errorf("annotation = %#v, want method auto", meta)
+	}
+	assertNoCLIPayload(t, stdout.String(), stderr.String())
+}
+
+func TestCoverRetryLimitsUseConfiguredOverrides(t *testing.T) {
+	tests := []struct {
+		name            string
+		runtime         configs.RuntimeConfig
+		wantConcurrency int
+		wantRPM         int
+	}{
+		{
+			name: "defaults stay conservative",
+			runtime: configs.RuntimeConfig{
+				Concurrency:       400,
+				RequestsPerMinute: 40_000,
+			},
+			wantConcurrency: 1,
+			wantRPM:         10,
+		},
+		{
+			name: "explicit cover limits override defaults",
+			runtime: configs.RuntimeConfig{
+				Concurrency:            400,
+				RequestsPerMinute:      40_000,
+				CoverConcurrency:       2,
+				CoverRequestsPerMinute: 18,
+			},
+			wantConcurrency: 2,
+			wantRPM:         18,
+		},
+		{
+			name: "legacy low RPM still applies when cover RPM is unset",
+			runtime: configs.RuntimeConfig{
+				Concurrency:       400,
+				RequestsPerMinute: 6,
+			},
+			wantConcurrency: 1,
+			wantRPM:         6,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := coverConcurrency(test.runtime); got != test.wantConcurrency {
+				t.Errorf("coverConcurrency() = %d, want %d", got, test.wantConcurrency)
+			}
+			if got := coverRequestsPerMinute(test.runtime); got != test.wantRPM {
+				t.Errorf("coverRequestsPerMinute() = %d, want %d", got, test.wantRPM)
+			}
+		})
+	}
 }
 
 func TestRunReturnsOneWhenAPIKeyIsMissing(t *testing.T) {
@@ -196,7 +321,7 @@ func TestRunDrainsInFlightRequestWithinShutdownTimeout(t *testing.T) {
 		t.Fatalf("run() code = %d, want 130 after graceful drain", code)
 	}
 	records := readMainJSONL(t, paths.output)
-	if len(records) != 1 || records[0]["trace_id"] != "trace-success" {
+	if len(records) != 1 || records[0]["id"] != "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Fatalf("output records = %#v, want drained success", records)
 	}
 }
@@ -247,7 +372,7 @@ func TestRunExportsExistingTerminalRecordsWhenResumeImportFails(t *testing.T) {
 	if code := run(context.Background(), []string{"-config", paths.config}, &firstStdout, &firstStderr); code != 0 {
 		t.Fatalf("run(first) code = %d, want 0; stderr=%q", code, firstStderr.String())
 	}
-	writeMainFile(t, paths.input, `{"trace_id":"trace-success","prompt":"changed synthetic prompt"}`+"\n")
+	writeMainFile(t, paths.input, compactCLIInput("changed synthetic prompt", cliResponse))
 	if err := os.Remove(paths.output); err != nil {
 		t.Fatalf("Remove(output) error = %v", err)
 	}
@@ -263,7 +388,7 @@ func TestRunExportsExistingTerminalRecordsWhenResumeImportFails(t *testing.T) {
 		t.Errorf("run(resume conflict) code = %d, want 1; stderr=%q", code, stderr.String())
 	}
 	records := readMainJSONL(t, paths.output)
-	if len(records) != 1 || records[0]["trace_id"] != "trace-success" {
+	if len(records) != 1 || records[0]["id"] != "dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
 		t.Errorf("output records = %#v, want prior terminal record", records)
 	}
 	assertNoCLIPayload(t, stdout.String(), stderr.String())
@@ -286,9 +411,7 @@ func writeCLIConfig(t *testing.T, baseURL, apiKeyEnv string) cliPaths {
 func writeCLIConfigWithMode(t *testing.T, baseURL, apiKeyEnv, mode string) cliPaths {
 	t.Helper()
 	directory := t.TempDir()
-	writeMainFile(t, filepath.Join(directory, "input.jsonl"),
-		fmt.Sprintf("{\"trace_id\":\"trace-success\",\"prompt\":%q,\"response\":%q}\n", cliPrompt, cliResponse),
-	)
+	writeMainFile(t, filepath.Join(directory, "input.jsonl"), compactCLIInput(cliPrompt, cliResponse))
 	writeMainFile(t, filepath.Join(directory, "schema.json"), cliSchema)
 	writeMainFile(t, filepath.Join(directory, "risk-types.yaml"), "test-risk: synthetic risk\n")
 	writeMainFile(t, filepath.Join(directory, "system.txt"), "Risk types:\n{{RISK_TYPES}}\nSchema:\n{{RESULT_SCHEMA}}\n")
@@ -334,6 +457,37 @@ output:
 		state:  filepath.Join(directory, "state.db"),
 		schema: filepath.Join(directory, "schema.json"),
 	}
+}
+
+// compactCLIInput 生成 CLI 集成测试使用的 compact_jsonl 输入行。
+func compactCLIInput(prompt, response string) string {
+	return fmt.Sprintf(
+		`{"id":"dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",`+
+			`"source":{"dataset":"dataset","path":"source.json","index":1},`+
+			`"messages":[{"role":"user","content":%q},{"role":"assistant","content":%q}],`+
+			`"label":{"value":"safe"},"meta":{"sample_id":"sample-1"}}`+"\n",
+		prompt,
+		response,
+	)
+}
+
+// differenceCLIInput 生成综合裁决模式使用的差异输入行。
+func differenceCLIInput() string {
+	return fmt.Sprintf(
+		`{"id":"dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",`+
+			`"source":{"dataset":"dataset","path":"source.json","index":1},`+
+			`"messages":[{"role":"user","content":%q},{"role":"assistant","content":%q}],`+
+			`"label":{"value":"unsafe","risk_type":"RT01","risk_level":"low"},`+
+			`"annotation":{"method":"auto","is_attack":true,"case_type":"typical",`+
+			`"explanation":"模型认为存在明显风险。",`+
+			`"extended_info":{"risk_type":"prompt_injection","risk_level":"high"}},`+
+			`"original_label":{"label":"unsafe","risk_type":"prompt_injection","risk_level":"low",`+
+			`"case_type":"typical","is_attack":true},`+
+			`"model_label":{"label":"unsafe","risk_type":"prompt_injection","risk_level":"high",`+
+			`"case_type":"typical","is_attack":true}}`+"\n",
+		cliPrompt,
+		cliResponse,
+	)
 }
 
 func newCLIProvider(t *testing.T, modelOutput, mode string) *httptest.Server {

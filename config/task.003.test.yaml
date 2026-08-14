@@ -1,8 +1,8 @@
 task:
-  id: masb-2026-08
-  input: ../data/input.jsonl
-  output: ../data/output.jsonl
-  state: ../data/masb-2026-08.db
+  id: task-003
+  input: ../data/task-003-test/compact.jsonl
+  output: ../data/task-003-test/output.jsonl
+  state: ../data/task-003-test/task-003-test.db
 
 model:
   base_url: https://aigateway.venusgroup.com.cn/ai/deepseek/openai
@@ -18,15 +18,13 @@ model:
     frequency_penalty: 0
 
 prompt:
-  system_file: ../prompts/masb-system.txt
+  system_file: ../prompts/my-batch-system.txt
   scene: auto
   risk_types_file: risk-types.yaml
 
 runtime:
   concurrency: 4
   requests_per_minute: 0
-  cover_concurrency: 1
-  cover_requests_per_minute: 10
   tokens_per_minute: 0
   shutdown_timeout: 30s
 

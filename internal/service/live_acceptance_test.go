@@ -188,30 +188,28 @@ func readLiveOutput(
 			t.Fatalf("output line %d: invalid JSON", lineNumber)
 		}
 		var traceID string
-		if err := json.Unmarshal(fields["trace_id"], &traceID); err != nil || traceID == "" {
-			t.Fatalf("output line %d: invalid trace_id", lineNumber)
+		if err := json.Unmarshal(fields["id"], &traceID); err != nil || traceID == "" {
+			t.Fatalf("output line %d: invalid id", lineNumber)
 		}
 		if _, exists := inputIDs[traceID]; !exists {
-			t.Fatalf("output line %d: trace_id is not in input", lineNumber)
+			t.Fatalf("output line %d: id is not in input", lineNumber)
 		}
 		if _, exists := seen[traceID]; exists {
-			t.Fatalf("output line %d: duplicate trace_id", lineNumber)
+			t.Fatalf("output line %d: duplicate id", lineNumber)
 		}
 		seen[traceID] = struct{}{}
 
-		var meta dto.AnnotationMeta
-		if err := json.Unmarshal(fields["annotation"], &meta); err != nil || meta.Method != "auto" {
+		annotationFields := make(map[string]json.RawMessage)
+		if err := json.Unmarshal(fields["annotation"], &annotationFields); err != nil {
+			t.Fatalf("output line %d: annotation decoding failed", lineNumber)
+		}
+		var method string
+		if err := json.Unmarshal(annotationFields["method"], &method); err != nil || method != "auto" {
 			t.Fatalf("output line %d: annotation.method is not auto", lineNumber)
 		}
 		counts.annotationAuto++
+		delete(annotationFields, "method")
 
-		annotationFields := map[string]json.RawMessage{
-			"label":       fields["label"],
-			"explanation": fields["explanation"],
-		}
-		if extendedInfo, exists := fields["extended_info"]; exists {
-			annotationFields["extended_info"] = extendedInfo
-		}
 		annotation, err := json.Marshal(annotationFields)
 		if err != nil {
 			t.Fatalf("output line %d: annotation encoding failed", lineNumber)

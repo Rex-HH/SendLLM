@@ -2,9 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "additionalProperties": false,
-  "required": ["label", "explanation"],
+  "required": ["is_attack", "case_type", "explanation"],
   "properties": {
-    "label": {"type": "string", "enum": ["safe", "unsafe"]},
+    "is_attack": {"type": "boolean"},
+    "case_type": {"type": "string", "enum": ["typical", "borderline", "variant", "hard_negative"]},
     "explanation": {"type": "string", "minLength": 10, "maxLength": 70},
     "extended_info": {
       "type": "object",
@@ -12,8 +13,6 @@
         "risk_type": {"type": "string"},
         "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
         "attack_scenario": {"type": "string"},
-        "case_type": {"type": "string", "enum": ["typical", "borderline", "variant", "hard_negative"]},
-        "is_attack": {"type": "boolean"},
         "other": {"type": "string"}
       },
       "additionalProperties": true

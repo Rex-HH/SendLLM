@@ -74,17 +74,11 @@ func exportWithFileOps(
 	failedPath := exportFailedPath(outputPath)
 	failedTemp, err := stageJSONL(failedPath, func(encoder *json.Encoder) error {
 		return store.ForEachFailed(ctx, taskID, func(record dao.FailedRecord) error {
-			if err := encoder.Encode(struct {
-				TraceID       string `json:"trace_id"`
-				ErrorCategory string `json:"error_category"`
-				ErrorSummary  string `json:"error_summary"`
-				Attempts      int    `json:"attempts"`
-			}{
-				TraceID:       record.TraceID,
-				ErrorCategory: record.ErrorCategory,
-				ErrorSummary:  record.ErrorSummary,
-				Attempts:      record.Attempts,
-			}); err != nil {
+			fields, err := mergeFailedRecord(record)
+			if err != nil {
+				return err
+			}
+			if err := encoder.Encode(fields); err != nil {
 				return fmt.Errorf("encode failed record: %w", err)
 			}
 			stats.Failed++
@@ -267,16 +261,59 @@ func mergeExportRecord(record dao.ExportRecord) (map[string]json.RawMessage, err
 	if err := json.Unmarshal(record.Annotation, &annotation); err != nil {
 		return nil, fmt.Errorf("decode annotation: %w", err)
 	}
-	for _, name := range []string{"label", "explanation", "extended_info"} {
-		value, ok := annotation[name]
-		if !ok {
-			delete(fields, name)
-			continue
-		}
-		fields[name] = append(json.RawMessage(nil), value...)
+	if err := putJSONField(annotation, "method", "auto"); err != nil {
+		return nil, err
 	}
-	fields["annotation"] = json.RawMessage(`{"method":"auto"}`)
+	encoded, err := json.Marshal(annotation)
+	if err != nil {
+		return nil, fmt.Errorf("encode annotation object: %w", err)
+	}
+	fields["annotation"] = encoded
 	return fields, nil
+}
+
+func mergeFailedRecord(record dao.FailedRecord) (map[string]json.RawMessage, error) {
+	fields := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(record.RawJSON, &fields); err != nil {
+		return nil, fmt.Errorf("decode failed source record: %w", err)
+	}
+	annotation := map[string]json.RawMessage{
+		"is_attack":     json.RawMessage("null"),
+		"extended_info": json.RawMessage("{}"),
+	}
+	if err := putJSONField(annotation, "method", "manual_required"); err != nil {
+		return nil, err
+	}
+	if err := putJSONField(annotation, "case_type", ""); err != nil {
+		return nil, err
+	}
+	if err := putJSONField(annotation, "explanation", ""); err != nil {
+		return nil, err
+	}
+	if err := putJSONField(annotation, "error_category", record.ErrorCategory); err != nil {
+		return nil, err
+	}
+	if err := putJSONField(annotation, "error_summary", record.ErrorSummary); err != nil {
+		return nil, err
+	}
+	if err := putJSONField(annotation, "attempts", record.Attempts); err != nil {
+		return nil, err
+	}
+	encoded, err := json.Marshal(annotation)
+	if err != nil {
+		return nil, fmt.Errorf("encode failed annotation object: %w", err)
+	}
+	fields["annotation"] = encoded
+	return fields, nil
+}
+
+func putJSONField(fields map[string]json.RawMessage, name string, value any) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode failed field %q: %w", name, err)
+	}
+	fields[name] = encoded
+	return nil
 }
 
 func stageJSONL(targetPath string, write func(*json.Encoder) error) (string, error) {

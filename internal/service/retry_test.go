@@ -103,6 +103,11 @@ func TestClassifyFailure(t *testing.T) {
 			want: FailureDecision{Category: "server", Retry: true},
 		},
 		{
+			name: "malformed provider response",
+			err:  &dto.ProviderError{Kind: dto.ProviderMalformedResponse},
+			want: FailureDecision{Category: "malformed_response", Retry: true},
+		},
+		{
 			name: "authentication error",
 			err: &dto.ProviderError{
 				Kind:       dto.ProviderAuthentication,

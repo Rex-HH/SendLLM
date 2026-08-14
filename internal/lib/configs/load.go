@@ -109,6 +109,8 @@ func markExplicitFields(contents []byte, config *Config) error {
 	runtime := mappingValue(document.Content[0], "runtime")
 	config.Runtime.concurrencySet = mappingValue(runtime, "concurrency") != nil
 	config.Runtime.shutdownTimeoutSet = mappingValue(runtime, "shutdown_timeout") != nil
+	config.Runtime.coverConcurrencySet = mappingValue(runtime, "cover_concurrency") != nil
+	config.Runtime.coverRequestsPerMinuteSet = mappingValue(runtime, "cover_requests_per_minute") != nil
 	retry := mappingValue(document.Content[0], "retry")
 	config.Retry.requestMaxAttemptsSet = mappingValue(retry, "request_max_attempts") != nil
 	config.Retry.formatRepairAttemptsSet = mappingValue(retry, "format_repair_attempts") != nil

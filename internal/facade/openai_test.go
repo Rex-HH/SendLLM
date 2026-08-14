@@ -215,6 +215,48 @@ func TestOpenAI_CompleteClassifiesProviderFailures(t *testing.T) {
 	}
 }
 
+func TestOpenAI_CompleteClassifiesContentRiskBadRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "message",
+			body: `{"error":{"message":"Content Exists Risk","type":"invalid_request_error","code":"invalid_request_error"}}`,
+		},
+		{
+			name: "inspection code",
+			body: `{"error":{"message":"synthetic provider detail","type":"data_inspection_failed","code":"data_inspection_failed"}}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = fmt.Fprint(w, test.body)
+			}))
+			t.Cleanup(server.Close)
+
+			client := newTestClient(t, server.URL)
+			response, err := client.Complete(context.Background(), completionRequest("json_object"))
+			var providerErr *dto.ProviderError
+			if !errors.As(err, &providerErr) || providerErr.Kind != dto.ProviderContentRejected {
+				t.Fatalf("Complete() error = %v, want content rejected ProviderError", err)
+			}
+			if providerErr.StatusCode != http.StatusBadRequest {
+				t.Errorf("StatusCode = %d, want 400", providerErr.StatusCode)
+			}
+			if len(response.RawResponse) == 0 {
+				t.Error("RawResponse is empty, want auditable provider response")
+			}
+			decision := service.ClassifyFailure(err)
+			if decision.Retry {
+				t.Errorf("ClassifyFailure().Retry = true, want permanent per-record failure")
+			}
+		})
+	}
+}
+
 func TestOpenAI_CompletePreservesAuditableFailureResponse(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -66,13 +66,17 @@ type PromptConfig struct {
 
 // RuntimeConfig 控制可调整的本地吞吐和退出行为。
 type RuntimeConfig struct {
-	Concurrency       int           `yaml:"concurrency"`
-	RequestsPerMinute int           `yaml:"requests_per_minute"`
-	TokensPerMinute   int           `yaml:"tokens_per_minute"`
-	ShutdownTimeout   time.Duration `yaml:"shutdown_timeout"`
+	Concurrency            int           `yaml:"concurrency"`
+	RequestsPerMinute      int           `yaml:"requests_per_minute"`
+	TokensPerMinute        int           `yaml:"tokens_per_minute"`
+	ShutdownTimeout        time.Duration `yaml:"shutdown_timeout"`
+	CoverConcurrency       int           `yaml:"cover_concurrency"`
+	CoverRequestsPerMinute int           `yaml:"cover_requests_per_minute"`
 
-	concurrencySet     bool
-	shutdownTimeoutSet bool
+	concurrencySet            bool
+	shutdownTimeoutSet        bool
+	coverConcurrencySet       bool
+	coverRequestsPerMinuteSet bool
 }
 
 // RetryConfig 控制每条记录的调用和修复尝试。
@@ -123,6 +127,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Runtime.RequestsPerMinute < 0 || c.Runtime.TokensPerMinute < 0 || c.Runtime.ShutdownTimeout <= 0 {
 		return invalid("runtime limits are invalid")
+	}
+	if c.Runtime.coverConcurrencySet && (c.Runtime.CoverConcurrency < 1 || c.Runtime.CoverConcurrency > MaxConcurrency) {
+		return invalid("runtime cover retry limits are invalid")
+	}
+	if c.Runtime.coverRequestsPerMinuteSet && c.Runtime.CoverRequestsPerMinute < 0 {
+		return invalid("runtime cover retry limits are invalid")
 	}
 	if c.Retry.RequestMaxAttempts < 1 || c.Retry.FormatRepairAttempts < 0 || c.Retry.InitialBackoff <= 0 || c.Retry.MaxBackoff < c.Retry.InitialBackoff {
 		return invalid("retry settings are invalid")
