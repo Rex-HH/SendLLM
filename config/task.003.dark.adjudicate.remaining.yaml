@@ -1,13 +1,13 @@
 task:
-  id: task-003-dark-adjudicate
-  input: ../data/task-003-dark-adjudicate/sendllm_differences.jsonl
-  output: ../data/task-003-dark-adjudicate/final_8_4.jsonl
-  state: ../data/task-003-dark-adjudicate/task-003-dark-adjudicate.db
+  id: task-003-dark-adjudicate-remaining
+  input: ../data/task-003-dark-adjudicate-remaining/sendllm_differences.remaining_for_new_model.jsonl
+  output: ../data/task-003-dark-adjudicate-remaining/final_8_4.remaining_new_model.jsonl
+  state: ../data/task-003-dark-adjudicate-remaining/task-003-dark-adjudicate-remaining.db
 
 model:
-  base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+  base_url: https://aigateway.venusgroup.com.cn/ai/deepseek/openai
   api_key_env: AI_GATEWAY_API_KEY
-  name: qwen3.7-plus
+  name: deepseek-v4-pro
   structured_output: json_object
   temperature: 0
   top_p: 1
@@ -24,13 +24,13 @@ prompt:
 
 runtime:
   concurrency: 100
-  requests_per_minute: 10000
+  requests_per_minute: 2000
   tokens_per_minute: 0
   shutdown_timeout: 30s
 
 retry:
   request_max_attempts: 10
-  format_repair_attempts: 2
+  format_repair_attempts: 0
   initial_backoff: 1s
   max_backoff: 20s
 
