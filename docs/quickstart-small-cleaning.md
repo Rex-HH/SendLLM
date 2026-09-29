@@ -106,7 +106,35 @@ wc -l ./runs/small-cleaning-001/quarantine.jsonl
 
 `quarantine.jsonl` 不应被当作失败数据删除。它表示当前 Prompt/Policy 无法稳定判断，适合用于下一轮提示词修订和回归。
 
-## 6. 闭环修订提示词后重跑
+## 6. 诊断每条数据的阶段判断
+
+如果不满意最终标签，可以查看每个角色阶段的判断。该命令只输出结构化状态，不输出 Prompt、Response、evidence span、rationale 或原始模型输出：
+
+```bash
+go run . safety-review explain \
+  --task-dir ./runs/small-cleaning-001 \
+  --trace-id small-clean-001
+```
+
+也可以不指定 `--trace-id`，一次输出任务内所有样本的阶段判断：
+
+```bash
+go run . safety-review explain --task-dir ./runs/small-cleaning-001
+```
+
+输出是 JSONL，每一行对应一个阶段。重点看：
+
+| 字段 | 含义 |
+| --- | --- |
+| `role` / `stage_key` | 当前是 Judge A、Judge B、Router、Expert 还是 Arbiter |
+| `state` | 该阶段成功、失败或隔离 |
+| `verdict` | 该角色自己的判断 |
+| `attack_methods` / `attack_domains` | Judge 或 Arbiter 识别出的风险类别 |
+| `method_candidates` / `domain_candidates` | Router 给出的候选，不是最终结论 |
+| `conditions` / `decisive_exclusions` | Expert 对规则条件与排除项的状态 |
+| `primary_*` / `case_type` / `quarantine_reason` | Arbiter 最终投影结果 |
+
+## 7. 闭环修订提示词后重跑
 
 推荐闭环是：
 

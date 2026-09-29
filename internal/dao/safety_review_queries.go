@@ -66,6 +66,19 @@ type SafetyReviewStageSummary struct {
 	FallbackIndex int
 }
 
+// SafetyReviewStageDetail 表示诊断视图需要的单阶段结构化结果。
+type SafetyReviewStageDetail struct {
+	TraceID       string
+	StageKey      string
+	Role          string
+	State         string
+	ModelProfile  string
+	ModelFamily   string
+	Fallback      int
+	ErrorCategory string
+	ResultJSON    []byte
+}
+
 // SafetyReviewAttemptSummary 表示不含载荷的尝试摘要。
 type SafetyReviewAttemptSummary struct {
 	TraceID       string
@@ -217,6 +230,43 @@ func (s *SafetyReviewStore) ReadSafetyReviewTaskID(ctx context.Context) (string,
 		return "", fmt.Errorf("read safety review task ID: %w", err)
 	}
 	return taskID, nil
+}
+
+// ReadSafetyReviewStageDetails 读取指定任务的阶段诊断结果。
+func (s *SafetyReviewStore) ReadSafetyReviewStageDetails(
+	ctx context.Context,
+	taskID string,
+	traceID string,
+) ([]SafetyReviewStageDetail, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT trace_id, stage_key, role, state,
+		COALESCE(model_profile, ''), COALESCE(model_family, ''), fallback_index,
+		COALESCE(error_category, ''), COALESCE(result_json, X'')
+		FROM review_stages
+		WHERE task_id = ? AND (? = '' OR trace_id = ?)
+		ORDER BY trace_id,
+			CASE role WHEN 'judge_a' THEN 1 WHEN 'judge_b' THEN 2 WHEN 'router' THEN 3
+				WHEN 'expert' THEN 4 ELSE 5 END,
+			stage_key`, taskID, traceID, traceID)
+	if err != nil {
+		return nil, fmt.Errorf("query safety review stage details: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	result := make([]SafetyReviewStageDetail, 0)
+	for rows.Next() {
+		var detail SafetyReviewStageDetail
+		if err := rows.Scan(
+			&detail.TraceID, &detail.StageKey, &detail.Role, &detail.State,
+			&detail.ModelProfile, &detail.ModelFamily, &detail.Fallback,
+			&detail.ErrorCategory, &detail.ResultJSON,
+		); err != nil {
+			return nil, fmt.Errorf("scan safety review stage detail: %w", err)
+		}
+		result = append(result, detail)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate safety review stage details: %w", err)
+	}
+	return result, nil
 }
 
 // ReadSafetyReviewTerminalItems 按输入顺序读取全部终态条目。

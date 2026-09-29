@@ -95,6 +95,21 @@ func TestSafetyReviewCLIRunOrdersPreflightBeforeClaims(t *testing.T) {
 		}
 	}
 	assertSafetyReviewCLIExportArtifacts(t, configTaskDir(path), "one")
+
+	var explainStdout, explainStderr strings.Builder
+	explainCode := cli.RunSafetyReview(
+		context.Background(),
+		[]string{"explain", "--task-dir", configTaskDir(path), "--trace-id", "one"},
+		&explainStdout, &explainStderr,
+	)
+	if explainCode != 0 {
+		t.Fatalf("RunSafetyReview(explain) = %d; stderr=%s", explainCode, explainStderr.String())
+	}
+	for _, expected := range []string{`"role":"judge_a"`, `"stage_key":"judge:a"`, `"state":"succeeded"`} {
+		if !strings.Contains(explainStdout.String(), expected) {
+			t.Fatalf("explain stdout = %q, want %s", explainStdout.String(), expected)
+		}
+	}
 }
 
 // TestSafetyReviewCLIRunResumesWithoutDuplicateClassification 验证完成后的重跑不重复分类。

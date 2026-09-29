@@ -32,6 +32,9 @@ func RunSafetyReview(ctx context.Context, args []string, stdout, stderr io.Write
 	if len(args) != 0 && args[0] == "status" {
 		return runSafetyReviewStatus(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) != 0 && args[0] == "explain" {
+		return runSafetyReviewExplain(ctx, args[1:], stdout, stderr)
+	}
 	command, configPath, err := parseSafetyReviewArgs(args)
 	if err != nil {
 		writeSafetyReviewError(stderr, "", "arguments")
@@ -66,6 +69,145 @@ func RunSafetyReview(ctx context.Context, args []string, stdout, stderr io.Write
 		return runSafetyReviewEval(ctx, cfg, policy, stdout, stderr)
 	}
 	return runSafetyReviewRun(ctx, cfg, policy, stdout, stderr)
+}
+
+// runSafetyReviewExplain 输出指定 trace 的各角色结构化诊断结果。
+func runSafetyReviewExplain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("safety-review explain", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	taskDir := flags.String("task-dir", "", "Safety Review task directory")
+	traceID := flags.String("trace-id", "", "optional trace id")
+	if err := flags.Parse(args); err != nil || *taskDir == "" || flags.NArg() != 0 {
+		writeSafetyReviewError(stderr, "", "arguments")
+		return 1
+	}
+	store, err := dao.OpenSafetyReviewReadOnly(ctx, filepath.Join(*taskDir, "state.db"))
+	if err != nil {
+		writeSafetyReviewError(stderr, "", "storage")
+		return 1
+	}
+	defer func() { _ = store.Close() }()
+	taskID, err := store.ReadSafetyReviewTaskID(ctx)
+	if err != nil {
+		writeSafetyReviewError(stderr, "", "storage")
+		return 1
+	}
+	details, err := store.ReadSafetyReviewStageDetails(ctx, taskID, *traceID)
+	if err != nil {
+		writeSafetyReviewError(stderr, taskID, "storage")
+		return 1
+	}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetEscapeHTML(false)
+	for _, detail := range details {
+		if err := encoder.Encode(buildSafetyReviewExplainRow(detail)); err != nil {
+			writeSafetyReviewError(stderr, taskID, "output")
+			return 1
+		}
+	}
+	return 0
+}
+
+// buildSafetyReviewExplainRow 构造不含 payload 的阶段诊断行。
+func buildSafetyReviewExplainRow(detail dao.SafetyReviewStageDetail) map[string]any {
+	row := map[string]any{
+		"trace_id": detail.TraceID, "stage_key": detail.StageKey, "role": detail.Role,
+		"state": detail.State, "model_profile": detail.ModelProfile,
+		"model_family": detail.ModelFamily, "fallback_index": detail.Fallback,
+		"error_category": detail.ErrorCategory,
+	}
+	if len(detail.ResultJSON) == 0 {
+		return row
+	}
+	switch detail.Role {
+	case "judge_a", "judge_b":
+		var result dto.SafetyReviewJudgment
+		if err := json.Unmarshal(detail.ResultJSON, &result); err != nil {
+			row["result_parse_error"] = true
+			return row
+		}
+		row["verdict"] = result.Verdict
+		row["evidence_complete"] = result.EvidenceComplete
+		row["attack_methods"] = result.AttackMethods
+		row["attack_domains"] = result.AttackDomains
+		row["exclusions"] = result.Exclusions
+	case "router":
+		var result dto.SafetyReviewRoute
+		if err := json.Unmarshal(detail.ResultJSON, &result); err != nil {
+			row["result_parse_error"] = true
+			return row
+		}
+		row["coverage_complete"] = result.CoverageComplete
+		row["method_candidates"] = safetyReviewCandidateCategories(result.AttackMethodCandidates)
+		row["domain_candidates"] = safetyReviewCandidateCategories(result.AttackDomainCandidates)
+		row["feature_kinds"] = safetyReviewFeatureKinds(result.Features)
+	case "expert":
+		var result dto.SafetyReviewExpertResult
+		if err := json.Unmarshal(detail.ResultJSON, &result); err != nil {
+			row["result_parse_error"] = true
+			return row
+		}
+		row["axis"] = result.Axis
+		row["category"] = result.Category
+		row["verdict"] = result.Verdict
+		row["conditions"] = safetyReviewConditionStates(result.Conditions)
+		row["decisive_exclusions"] = safetyReviewExclusionStates(result.DecisiveExclusions)
+		row["evidence_source"] = result.EvidenceSource
+	case "arbiter":
+		var result dto.SafetyReviewDecision
+		if err := json.Unmarshal(detail.ResultJSON, &result); err != nil {
+			row["result_parse_error"] = true
+			return row
+		}
+		row["verdict"] = result.Verdict
+		row["label"] = result.Label
+		row["is_attack"] = result.IsAttack
+		row["attack_methods"] = result.AttackMethods
+		row["attack_domains"] = result.AttackDomains
+		row["primary_attack_method"] = result.PrimaryAttackMethod
+		row["primary_attack_domain"] = result.PrimaryAttackDomain
+		row["primary_risk_type"] = result.PrimaryRiskType
+		row["case_type"] = result.CaseType
+		row["decision_rules"] = result.DecisionRules
+		row["quarantine_reason"] = result.QuarantineReason
+	}
+	return row
+}
+
+// safetyReviewConditionStates 仅保留条件 ID 和状态。
+func safetyReviewConditionStates(values []dto.SafetyReviewCondition) []map[string]string {
+	result := make([]map[string]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, map[string]string{"id": value.ID, "state": value.State})
+	}
+	return result
+}
+
+// safetyReviewExclusionStates 仅保留排除 ID 和状态。
+func safetyReviewExclusionStates(values []dto.SafetyReviewExclusion) []map[string]string {
+	result := make([]map[string]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, map[string]string{"id": value.ID, "state": value.State})
+	}
+	return result
+}
+
+// safetyReviewCandidateCategories 返回候选类别列表。
+func safetyReviewCandidateCategories(values []dto.SafetyReviewCandidate) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, value.Category)
+	}
+	return result
+}
+
+// safetyReviewFeatureKinds 返回 Router 特征类型列表，不输出 span。
+func safetyReviewFeatureKinds(values []dto.SafetyReviewFeature) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, value.ID+":"+value.Kind)
+	}
+	return result
 }
 
 // runSafetyReviewStatus 执行只读 status/watch 命令。
