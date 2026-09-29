@@ -19,6 +19,8 @@
 | `prompt` | 视场景 | Prompt 审核时必须有值 |
 | `response` | 视场景 | Response 审核时必须有值 |
 
+`scene` 必须与配置文件里的 `task.scene` 一致。一次 Safety Review 任务只能处理一个 scene；如果数据同时包含 `prompt` 和 `response`，请拆成两个输入文件并分别建任务。
+
 可以直接复制仓库中的合成样例：
 
 ```bash

@@ -378,7 +378,7 @@ func runSafetyReviewValidate(
 	stdout, stderr io.Writer,
 ) int {
 	if err := validateSafetyReviewInput(cfg.Task.Input, cfg.Task.Scene); err != nil {
-		writeSafetyReviewError(stderr, cfg.Task.ID, "input")
+		writeSafetyReviewInputError(stderr, cfg.Task.ID, err)
 		return 1
 	}
 	if err := validateSafetyReviewTaskPaths(cfg); err != nil {
@@ -728,11 +728,13 @@ func validateSafetyReviewInput(path, scene string) error {
 	defer func() { _ = file.Close() }()
 
 	reader := bufio.NewReader(file)
+	lineNumber := 0
 	for {
 		line, readErr := reader.ReadBytes('\n')
 		if len(bytes.TrimSpace(line)) != 0 {
+			lineNumber++
 			if err := validateSafetyReviewInputLine(line, scene); err != nil {
-				return err
+				return fmt.Errorf("input line %d: %w", lineNumber, err)
 			}
 		}
 		if errors.Is(readErr, io.EOF) {
@@ -1166,6 +1168,13 @@ func writeSafetyReviewAtomicJSON(path string, raw []byte) error {
 // writeSafetyReviewError 输出安全错误摘要。
 func writeSafetyReviewError(stderr io.Writer, taskID, category string) {
 	_, _ = fmt.Fprintf(stderr, "safety-review task_id=%s error_category=%s\n", taskID, category)
+}
+
+// writeSafetyReviewInputError 输出不含 payload 的输入校验摘要。
+func writeSafetyReviewInputError(stderr io.Writer, taskID string, err error) {
+	_, _ = fmt.Fprintf(
+		stderr, "safety-review task_id=%s error_category=input error_summary=%q\n", taskID, err.Error(),
+	)
 }
 
 // writeSafetyReviewInterrupted 输出安全中断摘要。
