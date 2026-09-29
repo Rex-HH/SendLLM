@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"sendllm/internal/dto"
@@ -50,6 +51,12 @@ func RunSafetyReviewPreflight(ctx context.Context, cfg SafetyReviewPreflightConf
 		dto.SafetyReviewExpert,
 		dto.SafetyReviewArbiter,
 	}
+	type probe struct {
+		role  dto.SafetyReviewRole
+		model SafetyReviewModel
+		req   dto.CompletionRequest
+	}
+	probes := make([]probe, 0, len(roles))
 	for _, role := range roles {
 		chain := cfg.Registry.Chain(role)
 		if len(chain) == 0 {
@@ -75,29 +82,49 @@ func RunSafetyReviewPreflight(ctx context.Context, cfg SafetyReviewPreflightConf
 				Schema:   append(json.RawMessage(nil), request.Schema...),
 				Mode:     request.Mode,
 			}
+			probes = append(probes, struct {
+				role  dto.SafetyReviewRole
+				model SafetyReviewModel
+				req   dto.CompletionRequest
+			}{role: role, model: model, req: probe})
+		}
+	}
+	errorsByProbe := make([]error, len(probes))
+	var wait sync.WaitGroup
+	for index, current := range probes {
+		index, current := index, current
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
 			startedAt := time.Now()
 			emitSafetyReviewPreflightEvent(cfg, SafetyReviewPreflightEvent{
-				Role: role, Profile: model.Profile, Family: model.Family, State: "running",
+				Role: current.role, Profile: current.model.Profile,
+				Family: current.model.Family, State: "running",
 			})
-			err := completeSafetyReviewPreflight(ctx, cfg, model, probe)
+			err := completeSafetyReviewPreflight(ctx, cfg, current.model, current.req)
 			finishedAt := time.Now()
 			if err != nil {
 				emitSafetyReviewPreflightEvent(cfg, SafetyReviewPreflightEvent{
-					Role: role, Profile: model.Profile, Family: model.Family,
+					Role: current.role, Profile: current.model.Profile, Family: current.model.Family,
 					State: "failed", ErrorCategory: ClassifyFailure(err).Category,
 					Duration: finishedAt.Sub(startedAt),
 				})
-				return fmt.Errorf(
+				errorsByProbe[index] = fmt.Errorf(
 					"safety review preflight role %s profile %s: %w",
-					role,
-					model.Profile,
-					err,
+					current.role, current.model.Profile, err,
 				)
+				return
 			}
 			emitSafetyReviewPreflightEvent(cfg, SafetyReviewPreflightEvent{
-				Role: role, Profile: model.Profile, Family: model.Family,
+				Role: current.role, Profile: current.model.Profile, Family: current.model.Family,
 				State: "succeeded", Duration: finishedAt.Sub(startedAt),
 			})
+		}()
+	}
+	wait.Wait()
+	for _, err := range errorsByProbe {
+		if err != nil {
+			return err
 		}
 	}
 	return nil

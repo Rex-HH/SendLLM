@@ -633,6 +633,7 @@ func runSafetyReviewRun(
 		writeSafetyReviewError(stderr, cfg.Task.ID, "preflight")
 		return 1
 	}
+	var preflightMu sync.Mutex
 	if err := service.RunSafetyReviewPreflight(ctx, service.SafetyReviewPreflightConfig{
 		Registry: runtime.registry, Scene: cfg.Task.Scene, Schema: policy.Schemas["judgment"],
 		Requests: preflightRequests,
@@ -642,6 +643,8 @@ func runSafetyReviewRun(
 			MaxBackoff:     cfg.Retry.MaxBackoff,
 		},
 		OnProbe: func(event service.SafetyReviewPreflightEvent) {
+			preflightMu.Lock()
+			defer preflightMu.Unlock()
 			if event.State == "running" {
 				_, _ = fmt.Fprintf(
 					stdout, "preflight role=%s profile=%s state=running\n",
