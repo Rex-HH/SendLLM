@@ -84,6 +84,11 @@ func TestSafetyReviewCLIRunOrdersPreflightBeforeClaims(t *testing.T) {
 	if !strings.Contains(stdout.String(), "status=completed") {
 		t.Fatalf("stdout = %q, want completed summary", stdout.String())
 	}
+	for _, status := range []string{"status=preflight", "status=running", "status=exporting"} {
+		if !strings.Contains(stdout.String(), status) {
+			t.Fatalf("stdout = %q, want %s", stdout.String(), status)
+		}
+	}
 	assertSafetyReviewCLIExportArtifacts(t, configTaskDir(path), "one")
 }
 

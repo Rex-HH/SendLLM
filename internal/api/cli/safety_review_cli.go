@@ -476,6 +476,10 @@ func runSafetyReviewRun(
 		writeSafetyReviewError(stderr, cfg.Task.ID, "import")
 		return 1
 	}
+	_, _ = fmt.Fprintf(
+		stdout, "task_id=%s status=preflight added=%d skipped=%d\n",
+		cfg.Task.ID, importStats.Added, importStats.Skipped,
+	)
 
 	preflightRequests, err := buildSafetyReviewPreflightRequests(policy, cfg.Task.Scene)
 	if err != nil {
@@ -510,6 +514,7 @@ func runSafetyReviewRun(
 		}
 		return exitCode
 	}
+	_, _ = fmt.Fprintf(stdout, "task_id=%s status=running\n", cfg.Task.ID)
 	if _, err := store.RecoverRunning(ctx, cfg.Task.ID); err != nil {
 		if ctx.Err() != nil {
 			writeSafetyReviewInterrupted(stderr, cfg.Task.ID)
@@ -548,6 +553,7 @@ func runSafetyReviewRun(
 		Report: cfg.Output.Report, RunStatus: cfg.Output.RunStatus,
 		Status: status, Now: time.Now,
 	})
+	_, _ = fmt.Fprintf(stdout, "task_id=%s status=exporting\n", cfg.Task.ID)
 	if err != nil {
 		writeSafetyReviewError(stderr, cfg.Task.ID, "export")
 		if exitCode == 0 {
