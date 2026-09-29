@@ -37,6 +37,11 @@ func TestSafetyReviewPreflightProbesEveryRoleProfile(t *testing.T) {
 		Registry: registry,
 		Scene:    "prompt",
 		Schema:   []byte(`{"type":"object"}`),
+		OnProbe: func(event service.SafetyReviewPreflightEvent) {
+			if event.State == "succeeded" {
+				t.Logf("preflight role=%s profile=%s", event.Role, event.Profile)
+			}
+		},
 	}
 	if err := service.RunSafetyReviewPreflight(context.Background(), cfg); err != nil {
 		t.Fatalf("RunSafetyReviewPreflight() error = %v", err)

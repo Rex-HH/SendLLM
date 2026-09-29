@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -71,7 +72,11 @@ func OpenSafetyReviewReadOnly(ctx context.Context, path string) (*SafetyReviewSt
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("inspect safety review database: %w", err)
 	}
-	dsn := (&url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}).String()
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve safety review database path: %w", err)
+	}
+	dsn := (&url.URL{Scheme: "file", Path: absolute, RawQuery: "mode=ro"}).String()
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open safety review database read-only: %w", err)

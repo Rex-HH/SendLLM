@@ -75,6 +75,8 @@ go run . safety-review run --config ./config/small-cleaning.yaml
 
 ```text
 task_id=small-cleaning-001 status=preflight added=3 skipped=0
+preflight role=judge_a profile=operational state=running
+preflight role=judge_a profile=operational state=succeeded duration=20.0s error=
 stage trace_id=small-clean-001 role=judge_a stage=judge:a state=running profile=operational
 stage trace_id=small-clean-001 role=judge_a stage=judge:a state=succeeded profile=operational duration=25.3s error=
 task_id=small-cleaning-001 status=running

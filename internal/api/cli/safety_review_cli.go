@@ -641,6 +641,20 @@ func runSafetyReviewRun(
 			InitialBackoff: cfg.Retry.InitialBackoff,
 			MaxBackoff:     cfg.Retry.MaxBackoff,
 		},
+		OnProbe: func(event service.SafetyReviewPreflightEvent) {
+			if event.State == "running" {
+				_, _ = fmt.Fprintf(
+					stdout, "preflight role=%s profile=%s state=running\n",
+					event.Role, event.Profile,
+				)
+				return
+			}
+			_, _ = fmt.Fprintf(
+				stdout, "preflight role=%s profile=%s state=%s duration=%s error=%s\n",
+				event.Role, event.Profile, event.State,
+				event.Duration.Round(100*time.Millisecond), event.ErrorCategory,
+			)
+		},
 	}); err != nil {
 		status := "failed"
 		exitCode := 1

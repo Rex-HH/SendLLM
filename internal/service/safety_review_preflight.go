@@ -18,6 +18,17 @@ type SafetyReviewPreflightConfig struct {
 	Retry    RetryPolicy
 	Sleeper  func(context.Context, time.Duration) error
 	Jitter   func(time.Duration) time.Duration
+	OnProbe  func(SafetyReviewPreflightEvent)
+}
+
+// SafetyReviewPreflightEvent 表示一次 preflight 探测的安全进度事件。
+type SafetyReviewPreflightEvent struct {
+	Role          dto.SafetyReviewRole
+	Profile       string
+	Family        string
+	State         string
+	ErrorCategory string
+	Duration      time.Duration
 }
 
 // RunSafetyReviewPreflight 逐个探测所有已配置角色链中的模型。
@@ -64,7 +75,18 @@ func RunSafetyReviewPreflight(ctx context.Context, cfg SafetyReviewPreflightConf
 				Schema:   append(json.RawMessage(nil), request.Schema...),
 				Mode:     request.Mode,
 			}
-			if err := completeSafetyReviewPreflight(ctx, cfg, model, probe); err != nil {
+			startedAt := time.Now()
+			emitSafetyReviewPreflightEvent(cfg, SafetyReviewPreflightEvent{
+				Role: role, Profile: model.Profile, Family: model.Family, State: "running",
+			})
+			err := completeSafetyReviewPreflight(ctx, cfg, model, probe)
+			finishedAt := time.Now()
+			if err != nil {
+				emitSafetyReviewPreflightEvent(cfg, SafetyReviewPreflightEvent{
+					Role: role, Profile: model.Profile, Family: model.Family,
+					State: "failed", ErrorCategory: ClassifyFailure(err).Category,
+					Duration: finishedAt.Sub(startedAt),
+				})
 				return fmt.Errorf(
 					"safety review preflight role %s profile %s: %w",
 					role,
@@ -72,9 +94,20 @@ func RunSafetyReviewPreflight(ctx context.Context, cfg SafetyReviewPreflightConf
 					err,
 				)
 			}
+			emitSafetyReviewPreflightEvent(cfg, SafetyReviewPreflightEvent{
+				Role: role, Profile: model.Profile, Family: model.Family,
+				State: "succeeded", Duration: finishedAt.Sub(startedAt),
+			})
 		}
 	}
 	return nil
+}
+
+// emitSafetyReviewPreflightEvent 发送不含 payload 的 preflight 事件。
+func emitSafetyReviewPreflightEvent(cfg SafetyReviewPreflightConfig, event SafetyReviewPreflightEvent) {
+	if cfg.OnProbe != nil {
+		cfg.OnProbe(event)
+	}
 }
 
 // completeSafetyReviewPreflight 按正式调用策略重试 preflight 的瞬态失败。
