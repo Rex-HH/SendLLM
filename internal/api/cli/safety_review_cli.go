@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -525,7 +526,7 @@ func runSafetyReviewRun(
 	}
 
 	stoppingStore := &safetyReviewStoppingStore{SafetyReviewStore: store}
-	runner, runErr := buildSafetyReviewRunner(cfg, policy, stoppingStore, runtime)
+	runner, runErr := buildSafetyReviewRunner(cfg, policy, stoppingStore, runtime, stdout)
 	if runErr != nil {
 		if ctx.Err() != nil {
 			writeSafetyReviewInterrupted(stderr, cfg.Task.ID)
@@ -899,7 +900,9 @@ func buildSafetyReviewRunner(
 	policy *service.SafetyReviewPolicy,
 	store safetyReviewExecutionStore,
 	runtime *safetyReviewRuntime,
+	stdout io.Writer,
 ) (*service.SafetyReviewRunner, error) {
+	var progressMu sync.Mutex
 	requestValidator, err := service.NewSafetyReviewRequestValidator(policy)
 	if err != nil {
 		return nil, err
@@ -923,6 +926,23 @@ func buildSafetyReviewRunner(
 		ModelProfile: "configured-profiles", ModelFamily: "configured-families",
 		APIKeyEnv: "configured-env", ShutdownTimeout: cfg.Runtime.ShutdownTimeout,
 		Now: time.Now, BuildRequest: buildSafetyReviewStageRequest(policy),
+		OnStage: func(event service.SafetyReviewStageEvent) {
+			progressMu.Lock()
+			defer progressMu.Unlock()
+			if event.State == "running" {
+				_, _ = fmt.Fprintf(
+					stdout, "stage trace_id=%s role=%s stage=%s state=running profile=%s\n",
+					event.TraceID, event.Role, event.StageKey, event.ModelProfile,
+				)
+				return
+			}
+			_, _ = fmt.Fprintf(
+				stdout,
+				"stage trace_id=%s role=%s stage=%s state=%s profile=%s duration=%s error=%s\n",
+				event.TraceID, event.Role, event.StageKey, event.State, event.ModelProfile,
+				event.Duration.Round(100*time.Millisecond), event.ErrorCategory,
+			)
+		},
 	})
 }
 

@@ -71,6 +71,19 @@ go run . safety-review validate --config ./config/small-cleaning.yaml
 go run . safety-review run --config ./config/small-cleaning.yaml
 ```
 
+运行时会输出关键阶段日志，但不打印样本内容：
+
+```text
+task_id=small-cleaning-001 status=preflight added=3 skipped=0
+stage trace_id=small-clean-001 role=judge_a stage=judge:a state=running profile=operational
+stage trace_id=small-clean-001 role=judge_a stage=judge:a state=succeeded profile=operational duration=25.3s error=
+task_id=small-cleaning-001 status=running
+task_id=small-cleaning-001 status=exporting
+task_id=small-cleaning-001 status=completed added=3 skipped=0 decisions=3
+```
+
+单次模型调用通常需要几十秒；3 条数据也不是只调用 3 次模型，而是会经过 Judge A、Judge B、Router、Expert、Arbiter 等多个阶段。并发为 1 时这些阶段会串行，因此少量数据也可能耗时较长。
+
 运行目录中会生成：
 
 | 文件 | 说明 |

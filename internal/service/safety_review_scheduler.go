@@ -56,6 +56,19 @@ type SafetyReviewRunnerConfig struct {
 	ShutdownTimeout time.Duration
 	Now             func() time.Time
 	BuildRequest    func(dao.SafetyReviewStageWork) (SafetyReviewCallRequest, error)
+	OnStage         func(SafetyReviewStageEvent)
+}
+
+// SafetyReviewStageEvent 表示一个阶段的安全进度事件，不包含样本 payload。
+type SafetyReviewStageEvent struct {
+	TraceID       string
+	StageKey      string
+	Role          string
+	State         string
+	ModelProfile  string
+	ModelFamily   string
+	ErrorCategory string
+	Duration      time.Duration
 }
 
 // SafetyReviewRunStats 汇总一次调度的处理结果。
@@ -309,6 +322,10 @@ func (r *SafetyReviewRunner) processStage(
 	defer release()
 
 	startedAt := r.cfg.Now()
+	r.emitStage(SafetyReviewStageEvent{
+		TraceID: work.TraceID, StageKey: work.StageKey, Role: work.Role, State: "running",
+		ModelProfile: work.ModelProfile, ModelFamily: work.ModelFamily,
+	})
 	result, callErr := r.cfg.Caller.Call(ctx, request)
 	finishedAt := r.cfg.Now()
 	parsed, parseErr := r.parseStageResult(ctx, work, role, result.Content)
@@ -380,6 +397,15 @@ func (r *SafetyReviewRunner) processStage(
 	if completeErr != nil {
 		return fmt.Errorf("complete safety review stage %s: %w", work.StageKey, completeErr)
 	}
+	eventState := "succeeded"
+	if outcome == dao.SafetyReviewStageTerminalFailed {
+		eventState = "terminal_failed"
+	}
+	r.emitStage(SafetyReviewStageEvent{
+		TraceID: work.TraceID, StageKey: work.StageKey, Role: work.Role, State: eventState,
+		ModelProfile: profile, ModelFamily: family, ErrorCategory: completion.ErrorCategory,
+		Duration: finishedAt.Sub(startedAt),
+	})
 	state.recordItemState(transition.itemState)
 	state.recordStageOutcome(outcome)
 	if startExperts {
@@ -391,6 +417,13 @@ func (r *SafetyReviewRunner) processStage(
 		state.signalWork()
 	}
 	return nil
+}
+
+// emitStage 发送不含 payload 的阶段进度事件。
+func (r *SafetyReviewRunner) emitStage(event SafetyReviewStageEvent) {
+	if r.cfg.OnStage != nil {
+		r.cfg.OnStage(event)
+	}
 }
 
 // buildStageRequest 按角色构建阶段模型请求。

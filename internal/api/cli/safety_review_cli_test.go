@@ -89,6 +89,11 @@ func TestSafetyReviewCLIRunOrdersPreflightBeforeClaims(t *testing.T) {
 			t.Fatalf("stdout = %q, want %s", stdout.String(), status)
 		}
 	}
+	for _, stageLog := range []string{"role=judge_a", "state=succeeded"} {
+		if !strings.Contains(stdout.String(), stageLog) {
+			t.Fatalf("stdout = %q, want stage log %s", stdout.String(), stageLog)
+		}
+	}
 	assertSafetyReviewCLIExportArtifacts(t, configTaskDir(path), "one")
 }
 
