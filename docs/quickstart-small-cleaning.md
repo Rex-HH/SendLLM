@@ -47,6 +47,8 @@ policy:
   bundle_dir: ../policy/releases/p04b-v1.0
 ```
 
+单模型配置里的五个角色和共享 quota 默认可以设为 `concurrency: 4`。如果全设为 `1`，所有角色会串行执行，3 条数据也可能等十几分钟；并发 4 更适合少量数据交互式试跑。
+
 单模型模式足够做清洗试跑，但结果会标记为 `acceptance_state=unvalidated`。如果需要正式准确率验收，应使用 `config/safety-review-eval.example.yaml` 的 `independent_profiles` 配置和 Hidden Gold。
 
 API Key 只从配置指定的环境变量读取，不要写进 YAML：
