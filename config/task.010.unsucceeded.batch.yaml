@@ -1,0 +1,47 @@
+task:
+  id: task-010-unsucceeded-retry
+  input: ../data/failed-retry/task-010-unsucceeded.jsonl
+  output: ../data/failed-retry/task-010-unsucceeded-retry-final.jsonl
+  state: ../data/failed-retry/task-010-unsucceeded-retry-state.db
+
+model:
+  base_url: https://aigateway.venusgroup.com.cn/ai/deepseek/openai
+  api_key_envs:
+    - AI_GATEWAY_API_KEY
+    - J_C_AI_GATEWAY_API_KEY
+    - Y_N_AI_GATEWAY_API_KEY
+  name: deepseek-v4-pro
+  structured_output: json_object
+  temperature: 0
+  top_p: 1
+  max_tokens: 3000
+  seed: 42
+  timeout: 240s
+  extra_body:
+    frequency_penalty: 0
+
+prompt:
+  system_file: ../prompts/reconcile-system-batch.txt
+  scene: auto
+  risk_types_file: risk-types.yaml
+
+runtime:
+  concurrency: 3
+  requests_per_minute: 30
+  tokens_per_minute: 0
+  shutdown_timeout: 30s
+  cover_concurrency: 3
+  cover_requests_per_minute: 30
+  batch_size: 1
+  batch_max_input_tokens: 60000
+
+retry:
+  request_max_attempts: 20
+  format_repair_attempts: 2
+  initial_backoff: 10s
+  max_backoff: 180s
+
+output:
+  schema_file: result-schema-v2.json
+  explanation_min_length: 10
+  explanation_max_length: 70

@@ -42,10 +42,21 @@
           "minLength": 10,
           "maxLength": 70
         },
+        "quality_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
         "extended_info": {
           "type": "object",
           "properties": {
             "risk_type": {
+              "type": "string"
+            },
+            "attack_method": {
+              "type": "string"
+            },
+            "attack_domain": {
               "type": "string"
             },
             "risk_level": {

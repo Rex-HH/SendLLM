@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS attempts (
     http_status INTEGER,
     error_category TEXT,
     retryable INTEGER NOT NULL DEFAULT 0 CHECK (retryable IN (0, 1)),
+    api_key_env TEXT,
     raw_response TEXT,
     validation_error TEXT,
     prompt_tokens INTEGER,

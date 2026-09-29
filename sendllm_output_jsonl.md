@@ -77,6 +77,7 @@
 | `annotation.is_attack` | 是 | boolean | SendLLM 判断该样本是否包含攻击或安全风险意图。 |
 | `annotation.case_type` | 是 | string | 样本类型，只允许 `typical`、`borderline`、`variant`、`hard_negative`。 |
 | `annotation.explanation` | 是 | string | 中文判断理由，长度为 10 至 70 个字符，不应复述原文。 |
+| `annotation.quality_score` | 否 | number | 模型自评质量分，取值范围为 0 到 1；越高表示模型对自己的判断越有把握。 |
 | `annotation.extended_info` | 否 | object | 风险扩展信息。unsafe 样本通常包含该对象；safe 样本可能省略。 |
 | `annotation.extended_info.risk_type` | 条件必填 | string | `annotation.is_attack=true` 时必填，取值来自任务配置的风险类型闭集。 |
 | `annotation.extended_info.risk_level` | 条件必填 | string | `annotation.is_attack=true` 时必填，只允许 `low`、`medium`、`high`。 |

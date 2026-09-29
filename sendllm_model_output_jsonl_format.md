@@ -67,6 +67,7 @@ task:
 | `annotation.is_attack` | 是 | boolean | 是否为攻击或风险样本。 |
 | `annotation.case_type` | 是 | string | 只允许 `typical`、`borderline`、`variant`、`hard_negative`。 |
 | `annotation.explanation` | 是 | string | 中文解释，长度 10 到 70 个字符。 |
+| `annotation.quality_score` | 否 | number | 模型自评质量分，取值范围为 0 到 1；越高表示模型对自己的判断越有把握。 |
 | `annotation.extended_info` | 否 | object | 风险扩展字段。 |
 | `annotation.extended_info.risk_type` | 条件必填 | string | `is_attack=true` 时应存在。 |
 | `annotation.extended_info.risk_level` | 条件必填 | string | `is_attack=true` 时应存在，只允许 `low`、`medium`、`high`。 |

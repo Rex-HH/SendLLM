@@ -2,6 +2,51 @@
 
 SendLLM is a local Go CLI for resumable, rate-limited LLM safety annotation of JSONL datasets.
 
+## Advertisement Review Workflow
+
+When implementing or reviewing the historical `advertisement-review-batch` mode, also read these files completely:
+
+- `docs/superpowers/specs/2026-09-21-advertisement-dataset-lightweight-review-design.md`
+- `docs/superpowers/plans/2026-09-21-advertisement-dataset-lightweight-review.md`
+- `docs/advertisement-review-agent-harness.md`
+
+The Advertisement Review harness is additive and stricter where it defines the original `trace_id` invariant,
+model-input minimization, protected legacy files, staged acceptance, and the mandatory human gate between the real
+pilot and the 58,658-row full run. `feat-039` is historical and blocked after both Flash pilots failed; do not restart
+its full run or reinterpret its 265-row directed review as full coverage.
+
+When implementing `feat-040`, also read these files completely:
+
+- `docs/superpowers/specs/2026-09-22-advertisement-full-cleaning-design.md`
+- `docs/superpowers/plans/2026-09-22-advertisement-full-cleaning.md`
+- `docs/advertisement-full-cleaning-coding-model-prompt.md`
+
+The newer full-cleaning design governs where it conflicts with the historical `feat-039` design. Implement only
+`feat-040`, preserve every protected input, stop before the real pilot until the human gate is approved, and never
+overwrite or merge into an existing dataset path.
+
+## Safety Review Workflow
+
+When implementing or reviewing the `safety-review` subcommand, also read these files completely:
+
+- `docs/superpowers/specs/2026-09-04-safety-review-pipeline-design.md`
+- `docs/superpowers/plans/2026-09-04-safety-review-pipeline-implementation.md`
+- `docs/safety-review-agent-harness.md`
+
+The Safety Review harness is additive and stricter where it defines feature scope, RED/GREEN evidence, protected legacy files, repeated concurrency checks, and real multi-model acceptance. Implement its `feat-015` through `feat-025` in dependency order, one active feature at a time.
+
+## Policy Optimization Workflow
+
+When implementing or reviewing the `policy-optimizer` subcommand, also read these files completely:
+
+- `docs/superpowers/specs/2026-09-04-safety-review-pipeline-design.md`
+- `docs/superpowers/specs/2026-09-07-policy-optimization-agent-design.md`
+- `docs/superpowers/specs/2026-09-07-policy-optimization-implementation-contract.md`
+- `docs/superpowers/plans/2026-09-07-policy-optimization-agent-implementation.md`
+- `docs/policy-optimization-agent-harness.md`
+
+Policy Optimization may start only after Safety Review `feat-025` is done. Implement `feat-026` through `feat-038` in dependency order, one active feature at a time. The frozen implementation contract governs exact CLI, state, DDL, Artifact, Schema, Skill, compiler, and failure behavior; coding agents may not redesign it. Models create candidate semantic artifacts only; deterministic code owns approved mappings, normalization, counts, patch application, Prompt compilation, regression gates, approval verification, and release. Human action owns mapping approval, Gold approval/promotion, Policy Directives, and release approval.
+
 ## Startup Workflow
 
 Before writing code:
@@ -22,8 +67,16 @@ Before writing code:
 - Use SQLite as the durable source of truth. JSONL files are import/export formats, not the live work queue.
 - Preserve unknown input fields. Use `trace_id` as the stable item ID and retain input order during export.
 - Keep the model boundary OpenAI-compatible. Business logic must depend on a narrow consumer-owned interface, not an SDK type.
+- Keep released policy versions immutable. Safety Review reads a verified released bundle; Policy Optimization writes only new candidate and release directories.
 - Read API keys only from the configured environment variable. Never persist or log credentials.
 - Never log raw `prompt`, `response`, full model output, or other dataset payloads. Persist audit payloads only in the configured SQLite state file.
+
+### Runtime availability versus acceptance
+
+- Missing Hidden Gold blocks only the `eval` acceptance claim and final production-readiness feature; it never blocks `validate` or model-only `run` on a new dataset.
+- A normal `run` may classify and clean unlabeled data. Insufficient evidence, policy gaps, provider failures, and unresolved disagreement must be quarantined, never converted to Safe because no human reviewer is available.
+- Model-generated consensus, pseudo-Gold, self-evaluation, and disagreement scores may guide diagnostics and review priority, but never become acceptance truth.
+- Human review is an optional escalation and sampling channel, not a per-record prerequisite for model-only execution.
 
 ## Go Code Standard
 

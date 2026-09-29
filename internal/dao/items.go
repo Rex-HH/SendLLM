@@ -57,6 +57,7 @@ type Attempt struct {
 	HTTPStatus       int
 	ErrorCategory    string
 	Retryable        bool
+	APIKeyEnv        string
 	RawResponse      []byte
 	ValidationErrors []string
 	InputTokens      int
@@ -85,6 +86,19 @@ type FailedRecord struct {
 	ErrorCategory string
 	ErrorSummary  string
 	Attempts      int
+}
+
+// ItemLogRecord 包含生成逐行任务日志所需的全部状态字段。
+type ItemLogRecord struct {
+	TraceID       string
+	InputIndex    int64
+	State         ItemState
+	RawJSON       []byte
+	Annotation    []byte
+	ErrorCategory string
+	ErrorSummary  string
+	Attempts      int
+	APIKeyEnv     string
 }
 
 // ImportDisposition 表示一条样本在导入中的处理结果。
@@ -380,6 +394,58 @@ func (s *Store) ForEachFailed(
 	return nil
 }
 
+// ForEachItemLog 按输入顺序访问任务全部记录及其当前状态。
+func (s *Store) ForEachItemLog(
+	ctx context.Context,
+	taskID string,
+	visit func(ItemLogRecord) error,
+) error {
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT trace_id, input_index, state, raw_json, annotation,
+			error_category, error_summary, request_attempts + repair_attempts,
+			COALESCE((
+				SELECT api_key_env FROM attempts
+				WHERE attempts.task_id = items.task_id AND attempts.trace_id = items.trace_id
+				ORDER BY id DESC LIMIT 1
+			), '')
+		FROM items WHERE task_id = ? ORDER BY input_index`,
+		taskID,
+	)
+	if err != nil {
+		return fmt.Errorf("query item log for task %q: %w", taskID, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var record ItemLogRecord
+		var errorCategory sql.NullString
+		var errorSummary sql.NullString
+		if err := rows.Scan(
+			&record.TraceID,
+			&record.InputIndex,
+			&record.State,
+			&record.RawJSON,
+			&record.Annotation,
+			&errorCategory,
+			&errorSummary,
+			&record.Attempts,
+			&record.APIKeyEnv,
+		); err != nil {
+			return fmt.Errorf("scan item log for task %q: %w", taskID, err)
+		}
+		record.ErrorCategory = errorCategory.String
+		record.ErrorSummary = errorSummary.String
+		if err := visit(record); err != nil {
+			return fmt.Errorf("visit item log for task %q: %w", taskID, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate item log for task %q: %w", taskID, err)
+	}
+	return nil
+}
+
 // NextRetryAt 返回最早等待重试时间。
 func (s *Store) NextRetryAt(ctx context.Context, taskID string) (time.Time, bool, error) {
 	var encoded sql.NullString
@@ -515,8 +581,8 @@ func insertAttempt(ctx context.Context, tx *sql.Tx, taskID string, traceID strin
 		ctx,
 		`INSERT INTO attempts (
 			task_id, trace_id, phase, started_at, finished_at, http_status, error_category,
-			retryable, raw_response, validation_error, prompt_tokens, completion_tokens
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			retryable, api_key_env, raw_response, validation_error, prompt_tokens, completion_tokens
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		taskID,
 		traceID,
 		attempt.Phase,
@@ -525,6 +591,7 @@ func insertAttempt(ctx context.Context, tx *sql.Tx, taskID string, traceID strin
 		attempt.HTTPStatus,
 		attempt.ErrorCategory,
 		attempt.Retryable,
+		attempt.APIKeyEnv,
 		attempt.RawResponse,
 		validationErrors,
 		attempt.InputTokens,

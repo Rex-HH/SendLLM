@@ -75,6 +75,9 @@ func applyDefaults(config *Config) {
 	if !config.Runtime.shutdownTimeoutSet {
 		config.Runtime.ShutdownTimeout = defaultShutdownTimeout
 	}
+	if !config.Runtime.batchSizeSet {
+		config.Runtime.BatchSize = 1
+	}
 	if !config.Retry.requestMaxAttemptsSet {
 		config.Retry.RequestMaxAttempts = defaultRequestMaxAttempts
 	}
@@ -111,6 +114,7 @@ func markExplicitFields(contents []byte, config *Config) error {
 	config.Runtime.shutdownTimeoutSet = mappingValue(runtime, "shutdown_timeout") != nil
 	config.Runtime.coverConcurrencySet = mappingValue(runtime, "cover_concurrency") != nil
 	config.Runtime.coverRequestsPerMinuteSet = mappingValue(runtime, "cover_requests_per_minute") != nil
+	config.Runtime.batchSizeSet = mappingValue(runtime, "batch_size") != nil
 	retry := mappingValue(document.Content[0], "retry")
 	config.Retry.requestMaxAttemptsSet = mappingValue(retry, "request_max_attempts") != nil
 	config.Retry.formatRepairAttemptsSet = mappingValue(retry, "format_repair_attempts") != nil

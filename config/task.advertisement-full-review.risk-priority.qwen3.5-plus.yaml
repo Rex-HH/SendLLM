@@ -1,0 +1,42 @@
+# feat-040 风险优先对照 pilot 配置。使用独立 task ID、SQLite 和输出目录。
+task:
+  id: advertisement-full-review-risk-priority-qwen35-plus-v1
+  input: ../data/ad/full-cleaning/risk-priority/pilot.input.jsonl
+  output: ../data/ad/full-cleaning/risk-priority/layer1.output.jsonl
+  state: ../data/ad/full-cleaning/risk-priority/layer1.qwen35-plus.db
+
+model:
+  base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+  api_key_env: AI_GATEWAY_API_KEY
+  name: qwen3.5-plus
+  structured_output: json_object
+  temperature: 0
+  top_p: 1
+  max_tokens: 4096
+  timeout: 180s
+  extra_body:
+    enable_thinking: false
+
+prompt:
+  system_file: ../prompts/advertisement-full-review-system.txt
+  scene: prompt
+  risk_types_file: risk-types.yaml
+
+runtime:
+  concurrency: 4
+  requests_per_minute: 30
+  tokens_per_minute: 2000000
+  shutdown_timeout: 60s
+  batch_size: 32
+  batch_max_input_tokens: 80000
+
+retry:
+  request_max_attempts: 5
+  format_repair_attempts: 0
+  initial_backoff: 2s
+  max_backoff: 60s
+
+output:
+  schema_file: advertisement-full-review-result-schema.json
+  explanation_min_length: 1
+  explanation_max_length: 1

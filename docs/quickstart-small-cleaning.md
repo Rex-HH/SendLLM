@@ -1,0 +1,108 @@
+# 少量数据清洗快速开始
+
+这份说明用于先拿 5-20 条数据试跑 Safety Review 清洗流程。程序流程内不需要人工逐条标记；模型直接给出 `clean` 或 `quarantine`，无法稳定判断的记录进入 `quarantine`，不会默认改成 Safe。
+
+## 1. 准备输入
+
+输入文件是一行一个 JSON 对象。最少需要：
+
+```json
+{"trace_id":"small-001","scene":"response","prompt":"用户问题","response":"模型回复"}
+```
+
+字段说明：
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `trace_id` | 是 | 唯一样本 ID，重跑时不能变 |
+| `scene` | 是 | `prompt` 或 `response` |
+| `prompt` | 视场景 | Prompt 审核时必须有值 |
+| `response` | 视场景 | Response 审核时必须有值 |
+
+可以直接复制仓库中的合成样例：
+
+```bash
+cp testdata/small-cleaning.example.jsonl ./small-input.jsonl
+```
+
+## 2. 配置模型
+
+从单模型示例开始：
+
+```bash
+cp config/safety-review-single-model.example.yaml ./config/small-cleaning.yaml
+```
+
+把 `config/small-cleaning.yaml` 改成你的本地路径，例如：
+
+```yaml
+task:
+  id: small-cleaning-001
+  input: ../small-input.jsonl
+  task_dir: ../runs/small-cleaning-001
+  scene: response
+policy:
+  bundle_dir: ../policy/releases/p04b-v1.0
+```
+
+单模型模式足够做清洗试跑，但结果会标记为 `acceptance_state=unvalidated`。如果需要正式准确率验收，应使用 `config/safety-review-eval.example.yaml` 的 `independent_profiles` 配置和 Hidden Gold。
+
+API Key 只从配置指定的环境变量读取，不要写进 YAML：
+
+```bash
+test -n "$AI_GATEWAY_API_KEY"
+```
+
+## 3. 先校验，不调用模型
+
+```bash
+go run . safety-review validate --config ./config/small-cleaning.yaml
+```
+
+看到 `validation=PASS` 后再运行。
+
+## 4. 运行清洗
+
+```bash
+go run . safety-review run --config ./config/small-cleaning.yaml
+```
+
+运行目录中会生成：
+
+| 文件 | 说明 |
+| --- | --- |
+| `clean.jsonl` | 模型给出确定结论的样本 |
+| `quarantine.jsonl` | 证据不足、策略缺口、模型失败或分歧样本 |
+| `audit.jsonl` | 不含原始 Prompt/Response 和原始模型输出的审计摘要 |
+| `quality-events.jsonl` | 可用于后续 Prompt/Policy 优化闭环的质量事件 |
+| `report.json` | 聚合统计 |
+| `run-status.json` | 最终或中断状态 |
+
+SQLite 状态库是唯一进度源。中断后重新执行同一条命令会继续运行，不会重复调用已经成功的样本。
+
+## 5. 查看结果
+
+```bash
+wc -l ./runs/small-cleaning-001/clean.jsonl
+wc -l ./runs/small-cleaning-001/quarantine.jsonl
+```
+
+`quarantine.jsonl` 不应被当作失败数据删除。它表示当前 Prompt/Policy 无法稳定判断，适合用于下一轮提示词修订和回归。
+
+## 6. 闭环修订提示词后重跑
+
+推荐闭环是：
+
+```text
+模型标记
+  -> 人工/强模型离线复核少量结果
+  -> 修改提示词或 Change Set
+  -> 自动 compile
+  -> fresh Safety Review regression
+  -> release
+  -> 再次模型标记
+```
+
+程序内不需要人工逐条标记。离线复核产物通过 Change Set 或 Prompt 修订进入程序，随后由 `policy-optimizer analyze` / `compile` / `regression` 自动执行。
+
+真正开始新一轮前，不要改旧任务的语义配置并复用同一个 SQLite。请使用新的 `task.id`、`task_dir` 和 clean/quarantine 输出目录。

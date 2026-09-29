@@ -1,0 +1,16 @@
+version: 1
+contract_id: CONTRACT-P04B-HIDDEN-SAFE
+contract_version: 1
+policy_scope: p04b
+description: Hidden Safe examples must remain Safe with zero false Unsafe outcomes.
+suite_query:
+  tags: [hidden, safe]
+minimum_cases: 1
+expected:
+  label: safe
+  minimum_pass_count: 1
+  maximum_false_unsafe: 0
+  maximum_false_safe: 0
+  maximum_quarantine: 0
+supersedes: ""
+human_directive_ref: ""

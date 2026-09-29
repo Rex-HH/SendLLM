@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	safetyreviewcli "sendllm/internal/api/cli"
 	"sendllm/internal/dao"
 	"sendllm/internal/facade"
 	"sendllm/internal/lib/configs"
@@ -25,6 +26,12 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 && args[0] == "safety-review" {
+		return safetyreviewcli.RunSafetyReview(ctx, args[1:], stdout, stderr)
+	}
+	if len(args) != 0 && args[0] == "policy-optimizer" {
+		return safetyreviewcli.RunPolicyOptimizer(ctx, args[1:], stdout, stderr)
+	}
 	logger := slog.New(slog.NewTextHandler(stderr, nil))
 	flags := flag.NewFlagSet("sendllm", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -41,7 +48,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if ctx.Err() != nil {
 		return fail(ctx, logger, cfg.Task.ID, "interrupted")
 	}
-	apiKey, err := cfg.APIKey()
+	apiKeys, err := cfg.APIKeys()
 	if err != nil {
 		return fail(ctx, logger, cfg.Task.ID, "api_key")
 	}
@@ -60,7 +67,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	completer, err := facade.NewOpenAI(facade.Config{
 		BaseURL:        cfg.Model.BaseURL,
-		APIKey:         apiKey,
+		APIKeys:        facadeAPIKeys(apiKeys),
 		Model:          cfg.Model.Name,
 		Temperature:    cfg.Model.Temperature,
 		TopP:           cfg.Model.TopP,
@@ -80,6 +87,150 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	})
 	if err != nil {
 		return fail(ctx, logger, cfg.Task.ID, "limiter")
+	}
+	if *mode == "reconcile" {
+		stats, err := service.Reconcile(ctx, service.ReconcileConfig{
+			TaskID:               cfg.Task.ID,
+			InputPath:            cfg.Task.Input,
+			OutputPath:           cfg.Task.Output,
+			StatePath:            cfg.Task.State,
+			SemanticHash:         semanticHash,
+			SystemPrompt:         cfg.SystemPrompt,
+			Scene:                cfg.Prompt.Scene,
+			Schema:               cfg.ResultSchema,
+			Mode:                 cfg.Model.StructuredOutput,
+			Completer:            completer,
+			Validator:            validator,
+			Limiter:              requestLimiter,
+			MaxTokens:            cfg.Model.MaxTokens,
+			MaxAttempts:          cfg.Retry.RequestMaxAttempts,
+			FormatRepairAttempts: cfg.Retry.FormatRepairAttempts,
+			Shutdown:             cfg.Runtime.ShutdownTimeout,
+			BatchSize:            cfg.Runtime.BatchSize,
+			BatchMaxInputTokens:  cfg.Runtime.BatchMaxInputTokens,
+			OnProgress:           progressLogger(ctx, cfg.Task.ID, logger),
+			RetryPolicy: service.RetryPolicy{
+				MaxAttempts:    cfg.Retry.RequestMaxAttempts,
+				InitialBackoff: cfg.Retry.InitialBackoff,
+				MaxBackoff:     cfg.Retry.MaxBackoff,
+			},
+		})
+		if err != nil {
+			return failWithError(ctx, logger, cfg.Task.ID, "reconcile", err)
+		}
+		_, _ = fmt.Fprintf(stdout, "succeeded=%d failed=%d\n", stats.Succeeded, stats.Failed)
+		if stats.Failed > 0 {
+			return 2
+		}
+		return 0
+	}
+	if *mode == "reconcile-batch" {
+		stats, err := service.ReconcileBatch(ctx, service.ReconcileConfig{
+			TaskID:               cfg.Task.ID,
+			InputPath:            cfg.Task.Input,
+			OutputPath:           cfg.Task.Output,
+			StatePath:            cfg.Task.State,
+			SemanticHash:         semanticHash,
+			SystemPrompt:         cfg.SystemPrompt,
+			Scene:                cfg.Prompt.Scene,
+			Schema:               cfg.ResultSchema,
+			Mode:                 cfg.Model.StructuredOutput,
+			Completer:            completer,
+			Validator:            validator,
+			Limiter:              requestLimiter,
+			MaxTokens:            cfg.Model.MaxTokens,
+			MaxAttempts:          cfg.Retry.RequestMaxAttempts,
+			FormatRepairAttempts: cfg.Retry.FormatRepairAttempts,
+			Shutdown:             cfg.Runtime.ShutdownTimeout,
+			BatchSize:            cfg.Runtime.BatchSize,
+			BatchMaxInputTokens:  cfg.Runtime.BatchMaxInputTokens,
+			OnProgress:           progressLogger(ctx, cfg.Task.ID, logger),
+			RetryPolicy: service.RetryPolicy{
+				MaxAttempts:    cfg.Retry.RequestMaxAttempts,
+				InitialBackoff: cfg.Retry.InitialBackoff,
+				MaxBackoff:     cfg.Retry.MaxBackoff,
+			},
+		})
+		if err != nil {
+			return failWithError(ctx, logger, cfg.Task.ID, "reconcile_batch", err)
+		}
+		_, _ = fmt.Fprintf(stdout, "succeeded=%d failed=%d\n", stats.Succeeded, stats.Failed)
+		if stats.Failed > 0 {
+			return 2
+		}
+		return 0
+	}
+	if *mode == "advertisement-review-batch" {
+		riskTypes := make(map[string]struct{}, len(cfg.RiskTypes))
+		for name := range cfg.RiskTypes {
+			riskTypes[name] = struct{}{}
+		}
+		stats, err := service.AdvertisementReview(ctx, service.AdvertisementReviewConfig{
+			TaskID:       cfg.Task.ID,
+			InputPath:    cfg.Task.Input,
+			OutputPath:   cfg.Task.Output,
+			StatePath:    cfg.Task.State,
+			SemanticHash: semanticHash,
+			SystemPrompt: cfg.SystemPrompt,
+			Schema:       cfg.ResultSchema,
+			Mode:         cfg.Model.StructuredOutput,
+			Completer:    completer,
+			Limiter:      requestLimiter,
+			RiskTypes:    riskTypes,
+			MaxTokens:    cfg.Model.MaxTokens,
+			MaxAttempts:  cfg.Retry.RequestMaxAttempts,
+			RetryPolicy: service.RetryPolicy{
+				MaxAttempts:    cfg.Retry.RequestMaxAttempts,
+				InitialBackoff: cfg.Retry.InitialBackoff,
+				MaxBackoff:     cfg.Retry.MaxBackoff,
+			},
+			Shutdown:            cfg.Runtime.ShutdownTimeout,
+			BatchSize:           cfg.Runtime.BatchSize,
+			BatchMaxInputTokens: cfg.Runtime.BatchMaxInputTokens,
+			OnProgress:          progressLogger(ctx, cfg.Task.ID, logger),
+		})
+		if err != nil {
+			return failWithError(ctx, logger, cfg.Task.ID, "advertisement_review_batch", err)
+		}
+		_, _ = fmt.Fprintf(stdout, "clean=%d issues=%d failed=%d\n", stats.Clean, stats.Issues, stats.Failed)
+		if stats.Failed > 0 {
+			return 2
+		}
+		return 0
+	}
+	if *mode == "label-review-batch" {
+		stats, err := service.LabelReviewBatch(ctx, service.LabelReviewConfig{
+			TaskID:              cfg.Task.ID,
+			InputPath:           cfg.Task.Input,
+			OutputPath:          cfg.Task.Output,
+			StatePath:           cfg.Task.State,
+			SemanticHash:        semanticHash,
+			SystemPrompt:        cfg.SystemPrompt,
+			Schema:              cfg.ResultSchema,
+			Mode:                cfg.Model.StructuredOutput,
+			Completer:           completer,
+			Validator:           validator,
+			Limiter:             requestLimiter,
+			MaxTokens:           cfg.Model.MaxTokens,
+			MaxAttempts:         cfg.Retry.RequestMaxAttempts,
+			Shutdown:            cfg.Runtime.ShutdownTimeout,
+			BatchSize:           cfg.Runtime.BatchSize,
+			BatchMaxInputTokens: cfg.Runtime.BatchMaxInputTokens,
+			OnProgress:          progressLogger(ctx, cfg.Task.ID, logger),
+			RetryPolicy: service.RetryPolicy{
+				MaxAttempts:    cfg.Retry.RequestMaxAttempts,
+				InitialBackoff: cfg.Retry.InitialBackoff,
+				MaxBackoff:     cfg.Retry.MaxBackoff,
+			},
+		})
+		if err != nil {
+			return failWithError(ctx, logger, cfg.Task.ID, "label_review_batch", err)
+		}
+		_, _ = fmt.Fprintf(stdout, "succeeded=%d failed=%d\n", stats.Succeeded, stats.Failed)
+		if stats.Failed > 0 {
+			return 2
+		}
+		return 0
 	}
 	if *mode == "adjudicate" {
 		stats, err := service.Adjudicate(ctx, service.AdjudicateConfig{
@@ -178,6 +329,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// facadeAPIKeys 转换配置层凭据，避免模型适配层依赖配置包类型。
+func facadeAPIKeys(keys []configs.APIKey) []facade.APIKey {
+	converted := make([]facade.APIKey, 0, len(keys))
+	for _, key := range keys {
+		converted = append(converted, facade.APIKey{Env: key.Env, Value: key.Value})
+	}
+	return converted
 }
 
 // newTaskRunner 根据配置装配默认标注 Runner。

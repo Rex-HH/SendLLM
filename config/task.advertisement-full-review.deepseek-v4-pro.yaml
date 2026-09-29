@@ -1,0 +1,40 @@
+# feat-040 第二层冻结 pilot 配置。输入只能由确定性 route 命令生成。
+task:
+  id: advertisement-full-review-deepseek-v4-pro-pilot-v1
+  input: ../data/ad/full-cleaning/pilot/layer2.input.jsonl
+  output: ../data/ad/full-cleaning/pilot/layer2.output.jsonl
+  state: ../data/ad/full-cleaning/pilot/layer2.deepseek-v4-pro.db
+
+model:
+  base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+  api_key_env: AI_GATEWAY_API_KEY
+  name: deepseek-v4-pro
+  structured_output: json_object
+  temperature: 0
+  top_p: 1
+  max_tokens: 4096
+  timeout: 180s
+
+prompt:
+  system_file: ../prompts/advertisement-full-review-system.txt
+  scene: prompt
+  risk_types_file: risk-types.yaml
+
+runtime:
+  concurrency: 4
+  requests_per_minute: 30
+  tokens_per_minute: 2000000
+  shutdown_timeout: 60s
+  batch_size: 32
+  batch_max_input_tokens: 80000
+
+retry:
+  request_max_attempts: 5
+  format_repair_attempts: 0
+  initial_backoff: 2s
+  max_backoff: 60s
+
+output:
+  schema_file: advertisement-full-review-result-schema.json
+  explanation_min_length: 1
+  explanation_max_length: 1

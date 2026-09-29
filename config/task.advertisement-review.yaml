@@ -1,0 +1,45 @@
+# 首选轻量模型配置。必须先通过分层 pilot 和人工门禁，才能用于 58,658 条全量复核。
+# 若 qwen3.5-flash 未通过固定阈值，改用独立的 task.advertisement-review.deepseek-v4-flash.yaml；
+# 禁止在一次任务的 SQLite 状态中途更换模型。
+task:
+  id: advertisement-review-qwen35-flash-v1
+  input: ../data/ad/advertisement_dataset_final.json
+  output: ../data/ad/review/qwen3.5-flash/clean.original.jsonl
+  state: ../data/ad/review/qwen3.5-flash/advertisement-review.db
+
+model:
+  base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+  api_key_env: AI_GATEWAY_API_KEY
+  name: qwen3.5-flash
+  structured_output: json_object
+  temperature: 0
+  top_p: 1
+  max_tokens: 16384
+  timeout: 180s
+  extra_body:
+    enable_thinking: false
+
+prompt:
+  system_file: ../prompts/advertisement-review-batch-system.txt
+  scene: prompt
+  risk_types_file: risk-types.yaml
+
+runtime:
+  concurrency: 4
+  requests_per_minute: 30
+  tokens_per_minute: 2000000
+  shutdown_timeout: 60s
+  batch_size: 512
+  batch_max_input_tokens: 110000
+
+retry:
+  request_max_attempts: 5
+  format_repair_attempts: 0
+  initial_backoff: 2s
+  max_backoff: 60s
+
+output:
+  schema_file: advertisement-review-result-schema.json
+  # 兼容当前通用配置校验；广告复核结果不包含 explanation。
+  explanation_min_length: 1
+  explanation_max_length: 1

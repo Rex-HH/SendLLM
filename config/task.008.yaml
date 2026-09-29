@@ -1,0 +1,45 @@
+task:
+  id: task-008
+  input: ../data/task-008/prompt-part-1-2-3-4-5.jsonl
+  output: ../data/task-008/task-008-final.jsonl
+  state: ../data/task-008/task-008-state.db
+
+model:
+  base_url: https://aigateway.venusgroup.com.cn/ai/deepseek/openai
+  api_key_envs:
+    - AI_GATEWAY_API_KEY
+    - J_C_AI_GATEWAY_API_KEY
+    - Y_N_AI_GATEWAY_API_KEY
+  name: deepseek-v4-pro
+  structured_output: json_object
+  temperature: 0
+  top_p: 1
+  max_tokens: 5000
+  seed: 42
+  timeout: 60s
+  extra_body:
+    frequency_penalty: 0
+
+prompt:
+  system_file: ../prompts/reconcile-system-prompt.txt
+  scene: auto
+  risk_types_file: risk-types.yaml
+
+runtime:
+  concurrency: 39
+  requests_per_minute: 400
+  tokens_per_minute: 0
+  shutdown_timeout: 30s
+  cover_concurrency: 12
+  cover_requests_per_minute: 180
+
+retry:
+  request_max_attempts: 10
+  format_repair_attempts: 2
+  initial_backoff: 3s
+  max_backoff: 60s
+
+output:
+  schema_file: result-schema-v2.json
+  explanation_min_length: 10
+  explanation_max_length: 70

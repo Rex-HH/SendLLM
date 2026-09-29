@@ -25,6 +25,7 @@ type CompletionResponse struct {
 	RawResponse  []byte
 	FinishReason string
 	Usage        Usage
+	APIKeyEnv    string
 }
 
 // Usage 记录供应商报告的 Token 使用量。

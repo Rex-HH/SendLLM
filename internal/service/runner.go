@@ -472,6 +472,7 @@ func (r *Runner) complete(
 	response, err := r.cfg.Completer.Complete(ctx, request)
 	release()
 	attempt.FinishedAt = time.Now()
+	attempt.APIKeyEnv = response.APIKeyEnv
 	attempt.RawResponse = append([]byte(nil), response.RawResponse...)
 	attempt.InputTokens = response.Usage.PromptTokens
 	attempt.OutputTokens = response.Usage.CompletionTokens

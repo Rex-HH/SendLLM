@@ -47,6 +47,7 @@ type TaskConfig struct {
 type ModelConfig struct {
 	BaseURL          string         `yaml:"base_url"`
 	APIKeyEnv        string         `yaml:"api_key_env"`
+	APIKeyEnvs       []string       `yaml:"api_key_envs"`
 	Name             string         `yaml:"name"`
 	StructuredOutput string         `yaml:"structured_output"`
 	Temperature      *float64       `yaml:"temperature"`
@@ -55,6 +56,12 @@ type ModelConfig struct {
 	Seed             *int64         `yaml:"seed"`
 	Timeout          time.Duration  `yaml:"timeout"`
 	ExtraBody        map[string]any `yaml:"extra_body"`
+}
+
+// APIKey 包含可安全记录的环境变量名和只在内存中使用的 Key 值。
+type APIKey struct {
+	Env   string
+	Value string
 }
 
 // PromptConfig 指定系统提示词、审查场景和风险闭集。
@@ -72,11 +79,14 @@ type RuntimeConfig struct {
 	ShutdownTimeout        time.Duration `yaml:"shutdown_timeout"`
 	CoverConcurrency       int           `yaml:"cover_concurrency"`
 	CoverRequestsPerMinute int           `yaml:"cover_requests_per_minute"`
+	BatchSize              int           `yaml:"batch_size"`
+	BatchMaxInputTokens    int           `yaml:"batch_max_input_tokens"`
 
 	concurrencySet            bool
 	shutdownTimeoutSet        bool
 	coverConcurrencySet       bool
 	coverRequestsPerMinuteSet bool
+	batchSizeSet              bool
 }
 
 // RetryConfig 控制每条记录的调用和修复尝试。
@@ -107,8 +117,11 @@ func (c *Config) Validate() error {
 	if c.Task.ID == "" || c.Task.Input == "" || c.Task.Output == "" || c.Task.State == "" {
 		return invalid("task id and paths are required")
 	}
-	if c.Model.BaseURL == "" || c.Model.APIKeyEnv == "" || c.Model.Name == "" {
-		return invalid("model base_url, api_key_env and name are required")
+	if c.Model.BaseURL == "" || c.Model.Name == "" {
+		return invalid("model base_url and name are required")
+	}
+	if err := c.validateAPIKeyEnvs(); err != nil {
+		return err
 	}
 	if c.Model.StructuredOutput != "json_schema" && c.Model.StructuredOutput != "json_object" && c.Model.StructuredOutput != "prompt_only" {
 		return invalid("model structured_output is invalid")
@@ -127,6 +140,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Runtime.RequestsPerMinute < 0 || c.Runtime.TokensPerMinute < 0 || c.Runtime.ShutdownTimeout <= 0 {
 		return invalid("runtime limits are invalid")
+	}
+	if c.Runtime.BatchSize < 1 || c.Runtime.BatchMaxInputTokens < 0 {
+		return invalid("runtime batch limits are invalid")
 	}
 	if c.Runtime.coverConcurrencySet && (c.Runtime.CoverConcurrency < 1 || c.Runtime.CoverConcurrency > MaxConcurrency) {
 		return invalid("runtime cover retry limits are invalid")
@@ -149,6 +165,28 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+// validateAPIKeyEnvs 校验单 key 和多 key 配置互斥且可安全读取。
+func (c *Config) validateAPIKeyEnvs() error {
+	if c.Model.APIKeyEnv != "" && len(c.Model.APIKeyEnvs) > 0 {
+		return invalid("model api_key_env and api_key_envs cannot both be set")
+	}
+	if c.Model.APIKeyEnv == "" && len(c.Model.APIKeyEnvs) == 0 {
+		return invalid("model api_key_env or api_key_envs is required")
+	}
+	seen := make(map[string]bool, len(c.Model.APIKeyEnvs))
+	for _, env := range c.Model.APIKeyEnvs {
+		trimmed := strings.TrimSpace(env)
+		if trimmed == "" {
+			return invalid("model api_key_envs contains an empty name")
+		}
+		if seen[trimmed] {
+			return invalid("model api_key_envs contains duplicate name %q", trimmed)
+		}
+		seen[trimmed] = true
+	}
 	return nil
 }
 
@@ -198,6 +236,32 @@ func (c *Config) APIKey() (string, error) {
 		return "", invalid("API key environment variable %q is empty", c.Model.APIKeyEnv)
 	}
 	return value, nil
+}
+
+// APIKeys 从配置指定的环境变量读取一个或多个 API Key。
+func (c *Config) APIKeys() ([]APIKey, error) {
+	envs := c.apiKeyEnvNames()
+	keys := make([]APIKey, 0, len(envs))
+	for _, env := range envs {
+		value, ok := os.LookupEnv(env)
+		if !ok || strings.TrimSpace(value) == "" {
+			return nil, invalid("API key environment variable %q is empty", env)
+		}
+		keys = append(keys, APIKey{Env: env, Value: value})
+	}
+	return keys, nil
+}
+
+// apiKeyEnvNames 返回规范化后的 API Key 环境变量名列表。
+func (c *Config) apiKeyEnvNames() []string {
+	if len(c.Model.APIKeyEnvs) > 0 {
+		envs := make([]string, 0, len(c.Model.APIKeyEnvs))
+		for _, env := range c.Model.APIKeyEnvs {
+			envs = append(envs, strings.TrimSpace(env))
+		}
+		return envs
+	}
+	return []string{strings.TrimSpace(c.Model.APIKeyEnv)}
 }
 
 func invalid(format string, args ...any) error {

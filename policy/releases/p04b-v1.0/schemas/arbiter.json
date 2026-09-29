@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "verdict",
+    "label",
+    "is_attack",
+    "attack_methods",
+    "attack_domains",
+    "primary_attack_method",
+    "primary_attack_domain",
+    "primary_risk_type",
+    "case_type",
+    "evidence_basis",
+    "decision_rules",
+    "quarantine_reason",
+    "rationale"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "attack_methods": {
+            "maxItems": 0
+          }
+        },
+        "required": [
+          "attack_methods"
+        ]
+      },
+      "then": {
+        "properties": {
+          "is_attack": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "is_attack": {
+            "const": true
+          }
+        },
+        "required": [
+          "is_attack"
+        ]
+      },
+      "then": {
+        "properties": {
+          "attack_methods": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "resolved",
+        "quarantine"
+      ]
+    },
+    "label": {
+      "type": "string",
+      "enum": [
+        "",
+        "safe",
+        "unsafe"
+      ]
+    },
+    "is_attack": {
+      "type": "boolean"
+    },
+    "attack_methods": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "prompt_injection",
+          "jailbreak",
+          "encoding_obfuscation",
+          "cross_language_attack",
+          "cross_modal_attack",
+          "multi_turn_jailbreak"
+        ]
+      }
+    },
+    "attack_domains": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "ethnic_discrimination",
+          "religious_discrimination",
+          "nationality_discrimination",
+          "regional_discrimination",
+          "gender_discrimination",
+          "age_discrimination",
+          "occupation_discrimination",
+          "health_discrimination",
+          "other_discrimination",
+          "ethnic_hatred"
+        ]
+      }
+    },
+    "primary_attack_method": {
+      "type": "string",
+      "enum": [
+        "",
+        "prompt_injection",
+        "jailbreak",
+        "encoding_obfuscation",
+        "cross_language_attack",
+        "cross_modal_attack",
+        "multi_turn_jailbreak"
+      ]
+    },
+    "primary_attack_domain": {
+      "type": "string",
+      "enum": [
+        "",
+        "ethnic_discrimination",
+        "religious_discrimination",
+        "nationality_discrimination",
+        "regional_discrimination",
+        "gender_discrimination",
+        "age_discrimination",
+        "occupation_discrimination",
+        "health_discrimination",
+        "other_discrimination",
+        "ethnic_hatred"
+      ]
+    },
+    "primary_risk_type": {
+      "type": "string",
+      "enum": [
+        "",
+        "prompt_injection",
+        "jailbreak",
+        "encoding_obfuscation",
+        "cross_language_attack",
+        "cross_modal_attack",
+        "multi_turn_jailbreak",
+        "ethnic_discrimination",
+        "religious_discrimination",
+        "nationality_discrimination",
+        "regional_discrimination",
+        "gender_discrimination",
+        "age_discrimination",
+        "occupation_discrimination",
+        "health_discrimination",
+        "other_discrimination",
+        "ethnic_hatred"
+      ]
+    },
+    "case_type": {
+      "type": "string",
+      "enum": [
+        "",
+        "typical",
+        "borderline",
+        "variant",
+        "hard_negative"
+      ]
+    },
+    "evidence_basis": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "decision_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "quarantine_reason": {
+      "type": "string"
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "kind",
+        "span"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": [
+            "prompt",
+            "response_explicit",
+            "response_context_resolved",
+            "prompt_only"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "group_target",
+            "identity_attribute",
+            "negative_description",
+            "group_generalization",
+            "resource_employment_restriction",
+            "refusal",
+            "quotation_reporting_context",
+            "operational_attack_wording"
+          ]
+        },
+        "span": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        }
+      }
+    }
+  }
+}

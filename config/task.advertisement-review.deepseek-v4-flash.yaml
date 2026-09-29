@@ -1,0 +1,42 @@
+# 仅当 qwen3.5-flash 对同一分层 pilot 未达到固定人工验收阈值时启用。
+# 本配置使用独立 task ID、SQLite 和输出目录，不能读取或覆盖 Qwen 的运行状态。
+task:
+  id: advertisement-review-deepseek-v4-flash-v1
+  input: ../data/ad/advertisement_dataset_final.json
+  output: ../data/ad/review/deepseek-v4-flash/clean.original.jsonl
+  state: ../data/ad/review/deepseek-v4-flash/advertisement-review.db
+
+model:
+  base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+  api_key_env: AI_GATEWAY_API_KEY
+  name: deepseek-v4-flash
+  structured_output: json_object
+  temperature: 0
+  top_p: 1
+  max_tokens: 16384
+  timeout: 180s
+
+prompt:
+  system_file: ../prompts/advertisement-review-batch-system.txt
+  scene: prompt
+  risk_types_file: risk-types.yaml
+
+runtime:
+  concurrency: 4
+  requests_per_minute: 30
+  tokens_per_minute: 2000000
+  shutdown_timeout: 60s
+  batch_size: 512
+  batch_max_input_tokens: 110000
+
+retry:
+  request_max_attempts: 5
+  format_repair_attempts: 0
+  initial_backoff: 2s
+  max_backoff: 60s
+
+output:
+  schema_file: advertisement-review-result-schema.json
+  # 兼容当前通用配置校验；广告复核结果不包含 explanation。
+  explanation_min_length: 1
+  explanation_max_length: 1

@@ -1,0 +1,72 @@
+version: 1
+task:
+  id: p04b-operational-001
+  input: ./Safety_Review_P04B_Input.jsonl
+  task_dir: ./runs/p04b-operational-001
+  scene: response
+policy:
+  bundle_dir: ./policy/releases/p04b-v1.0
+models:
+  execution_mode: single_profile
+  profiles:
+    operational:
+      family: deepseek
+      base_url: "https://aigateway.venusgroup.com.cn/ai/aliyun/openai"
+      api_key_env: AI_GATEWAY_API_KEY
+      name: deepseek-v4-pro
+      structured_output: json_object
+      max_tokens: 12000
+      timeout: 90s
+      quota_group: operational_shared
+  roles:
+    judge_a:
+      primary: operational
+      fallbacks: []
+      concurrency: 1
+      requests_per_minute: 0
+      tokens_per_minute: 0
+    judge_b:
+      primary: operational
+      fallbacks: []
+      concurrency: 1
+      requests_per_minute: 0
+      tokens_per_minute: 0
+    router:
+      primary: operational
+      fallbacks: []
+      concurrency: 1
+      requests_per_minute: 0
+      tokens_per_minute: 0
+    expert:
+      primary: operational
+      fallbacks: []
+      concurrency: 1
+      requests_per_minute: 0
+      tokens_per_minute: 0
+    arbiter:
+      primary: operational
+      fallbacks: []
+      concurrency: 1
+      requests_per_minute: 0
+      tokens_per_minute: 0
+  quota_groups:
+    operational_shared:
+      concurrency: 1
+      requests_per_minute: 0
+      tokens_per_minute: 0
+runtime:
+  shutdown_timeout: 30s
+  status_interval: 5s
+retry:
+  transient_attempts_per_model: 3
+  format_repair_attempts: 1
+  refusal_reprompt_attempts: 1
+  initial_backoff: 1s
+  max_backoff: 60s
+output:
+  clean: clean.jsonl
+  audit: audit.jsonl
+  quality_events: quality-events.jsonl
+  quarantine: quarantine.jsonl
+  report: report.json
+  run_status: run-status.json

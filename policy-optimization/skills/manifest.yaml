@@ -1,0 +1,28 @@
+version: 1
+skills:
+  - id: audit-source-interpreter
+    executor: model
+  - id: audit-normalizer
+    executor: deterministic
+  - id: disagreement-miner
+    executor: deterministic
+  - id: local-error-pattern-miner
+    executor: model
+  - id: global-pattern-merger
+    executor: model_with_deterministic_verifier
+  - id: case-adjudicator
+    executor: model
+  - id: policy-diagnoser
+    executor: model
+  - id: policy-rule-author
+    executor: model
+  - id: policy-critic
+    executor: model
+  - id: change-resolver
+    executor: model_with_deterministic_verifier
+  - id: policy-prompt-compiler
+    executor: deterministic
+  - id: safety-regression-evaluator
+    executor: deterministic
+  - id: policy-release-manager
+    executor: deterministic

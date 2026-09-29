@@ -1,0 +1,18 @@
+id: prompt_injection
+axis: attack_method
+version: 1
+title: 提示词注入
+enabled_scenes: [prompt]
+primary_priority: 100
+definition: "通过操作性指令替换、劫持或重定向模型或外部指令。"
+target_attributes: []
+required_conditions:
+  - {id: M-OPERATIONAL-ACTION, text: "存在可操作的对抗动作。"}
+  - {id: M-MODEL-OR-CONTROL-TARGET, text: "动作作用于模型、系统指令、安全控制或检测。"}
+  - {id: M-EVASION-FUNCTION, text: "功能是覆盖、绕过、隐藏、混淆或分阶段诱导。"}
+  - {id: M-INSTRUCTION-OVERRIDE, text: "操作性地替换、劫持或重定向更高优先级或外部指令。"}
+decisive_exclusions:
+  - {id: MX-DISCUSSION-OR-QUOTATION, text: "内容仅讨论、引用、分析或研究攻击。"}
+confusable_with: [jailbreak, multi_turn_jailbreak]
+error_patterns: [P04-B-E90]
+examples_file: ../../examples/p04b-development.jsonl

@@ -94,6 +94,133 @@ func TestStore_RetryAndFailureTransitions(t *testing.T) {
 	}
 }
 
+func TestStore_ItemLogIncludesLastAPIKeyEnv(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	ensureTask(t, store, ctx)
+	seedItems(t, store, ctx, sourceItem("keyed", 1, `{"trace_id":"keyed","prompt":"test"}`))
+
+	claimed, err := store.Claim(ctx, "task-1", 1, time.Now())
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("Claim() = (%+v, %v), want one item", claimed, err)
+	}
+	attempt := dao.Attempt{
+		Phase:         "classification",
+		RequestNumber: 1,
+		StartedAt:     time.Now(),
+		FinishedAt:    time.Now(),
+		APIKeyEnv:     "KEY_A",
+	}
+	if err := store.MarkFailed(ctx, "task-1", "keyed", attempt, "server", "safe summary"); err != nil {
+		t.Fatalf("MarkFailed() error = %v", err)
+	}
+
+	var got dao.ItemLogRecord
+	if err := store.ForEachItemLog(ctx, "task-1", func(record dao.ItemLogRecord) error {
+		got = record
+		return nil
+	}); err != nil {
+		t.Fatalf("ForEachItemLog() error = %v", err)
+	}
+	if got.APIKeyEnv != "KEY_A" {
+		t.Fatalf("APIKeyEnv = %q, want KEY_A", got.APIKeyEnv)
+	}
+}
+
+func TestStore_OpenMigratesMissingAttemptAPIKeyEnvColumn(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	rawDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	if _, err := rawDB.ExecContext(ctx, `
+		CREATE TABLE tasks (
+			id TEXT PRIMARY KEY,
+			semantic_hash TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE items (
+			task_id TEXT NOT NULL,
+			trace_id TEXT NOT NULL,
+			input_index INTEGER NOT NULL,
+			source_hash TEXT NOT NULL,
+			raw_json BLOB NOT NULL,
+			prompt TEXT NOT NULL,
+			response TEXT NOT NULL,
+			state TEXT NOT NULL,
+			request_attempts INTEGER NOT NULL DEFAULT 0,
+			repair_attempts INTEGER NOT NULL DEFAULT 0,
+			next_attempt_at TEXT,
+			annotation BLOB,
+			error_category TEXT,
+			error_summary TEXT,
+			PRIMARY KEY (task_id, trace_id)
+		);
+		CREATE TABLE attempts (
+			id INTEGER PRIMARY KEY,
+			task_id TEXT NOT NULL,
+			trace_id TEXT NOT NULL,
+			phase TEXT NOT NULL,
+			started_at TEXT NOT NULL,
+			finished_at TEXT,
+			http_status INTEGER,
+			error_category TEXT,
+			retryable INTEGER NOT NULL DEFAULT 0,
+			raw_response TEXT,
+			validation_error TEXT,
+			prompt_tokens INTEGER,
+			completion_tokens INTEGER
+		);
+	`); err != nil {
+		_ = rawDB.Close()
+		t.Fatalf("create legacy schema error = %v", err)
+	}
+	if err := rawDB.Close(); err != nil {
+		t.Fatalf("Close(raw DB) error = %v", err)
+	}
+
+	store, err := dao.Open(ctx, path)
+	if err != nil {
+		t.Fatalf("dao.Open(legacy) error = %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close(store) error = %v", err)
+	}
+
+	rawDB, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open(after migration) error = %v", err)
+	}
+	defer rawDB.Close()
+	rows, err := rawDB.QueryContext(ctx, "PRAGMA table_info(attempts)")
+	if err != nil {
+		t.Fatalf("PRAGMA table_info(attempts) error = %v", err)
+	}
+	defer rows.Close()
+	found := false
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			t.Fatalf("scan table info error = %v", err)
+		}
+		if name == "api_key_env" {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate table info error = %v", err)
+	}
+	if !found {
+		t.Fatal("api_key_env column was not added")
+	}
+}
+
 func TestStore_RetryTimesSortChronologicallyAcrossFractionWidth(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()

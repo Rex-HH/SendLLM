@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sendllm.local/policy-optimization/contracts.schema.json",
+  "title": "Policy Optimizer external contracts",
+  "$defs": {
+    "authority": {
+      "type": "string",
+      "enum": [
+        "human_directive",
+        "security_team_decision",
+        "approved_gold_evidence",
+        "automated_proposal",
+        "third_party_proposal",
+        "observation"
+      ]
+    },
+    "comparisonType": {
+      "type": "string",
+      "enum": [
+        "label_mismatch",
+        "risk_mismatch",
+        "case_type_mismatch",
+        "policy_version_change",
+        "model_disagreement",
+        "human_selected",
+        "no_comparison"
+      ]
+    },
+    "sourceType": {
+      "type": "string",
+      "enum": [
+        "safety_review_disagreement",
+        "sft_vs_judge",
+        "sft_vs_gold",
+        "policy_version_diff",
+        "human_selected",
+        "third_party_model",
+        "external_benchmark",
+        "historical_error",
+        "random_sample",
+        "custom"
+      ]
+    },
+    "auditRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "sample_id",
+        "source_id",
+        "source_type",
+        "source_task",
+        "selection_reason",
+        "scene",
+        "prompt",
+        "response",
+        "judgments",
+        "policy_version",
+        "comparison",
+        "metadata"
+      ],
+      "properties": {
+        "record_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "sample_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "source_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "source_type": {"$ref": "#/$defs/sourceType"},
+        "source_task": {"type": "string", "minLength": 1, "maxLength": 128},
+        "selection_reason": {"type": "string", "minLength": 1, "maxLength": 128},
+        "scene": {"type": "string", "enum": ["prompt", "response"]},
+        "prompt": {"type": "string"},
+        "response": {"type": "string"},
+        "judgments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["actor_type", "actor_id", "label", "risk_types", "authority", "source_ref"],
+            "properties": {
+              "actor_type": {"type": "string", "minLength": 1},
+              "actor_id": {"type": "string", "minLength": 1, "maxLength": 128},
+              "label": {"type": "string", "enum": ["safe", "unsafe", "uncertain"]},
+              "risk_types": {"type": "array", "items": {"type": "string"}},
+              "authority": {"$ref": "#/$defs/authority"},
+              "source_ref": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "policy_version": {"type": "string", "minLength": 1},
+        "comparison": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["left", "right", "type"],
+          "properties": {
+            "left": {"type": "integer", "minimum": 0},
+            "right": {"type": "integer", "minimum": 0},
+            "type": {"$ref": "#/$defs/comparisonType"}
+          }
+        },
+        "metadata": {"type": "object"}
+      }
+    },
+    "changeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "change_id",
+        "source",
+        "authority",
+        "targets",
+        "requested_changes",
+        "rationale",
+        "evidence_refs",
+        "created_at"
+      ],
+      "properties": {
+        "version": {"type": "integer", "const": 1},
+        "change_id": {"type": "string", "minLength": 1, "maxLength": 128},
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "actor_id"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["human", "security_team", "automated_proposal", "third_party_model", "external_research"]
+            },
+            "actor_id": {"type": "string", "minLength": 1, "maxLength": 128}
+          }
+        },
+        "authority": {"$ref": "#/$defs/authority"},
+        "targets": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "requested_changes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "rationale": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "evidence_refs": {"type": "array", "items": {"type": "string"}},
+        "created_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

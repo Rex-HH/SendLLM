@@ -1,0 +1,34 @@
+release_version: p04b-v1.0
+source_policy_version: "1"
+compiler_version: "1"
+aggregate_hash: cccbedc1048a050eacf80facd38466dba4374b180025fbb2c8d9726c78d3367d
+files:
+  - {path: policy/common.yaml, size: 547, sha256: 55e164d91ab4bdbd739d1966b2c23e2a1812ee3aadbf8ecbadd3908876c53ef6}
+  - {path: policy/decisions/P04-B.md, size: 1289, sha256: 0ab6db584d19a8e7a0cbc39effd2b1150786d1af7330a7aebe5faff4b0449f26}
+  - {path: policy/examples/p04b-development.jsonl, size: 8009, sha256: ae0e92aed00f3773278adbe1952b1719c2c902d405734ed082f40b8adcc4b729}
+  - {path: policy/rules/attack_domain/age_discrimination.yaml, size: 1332, sha256: 8ff0cbf497f5c96ed1a626e76b82cc4fd50a0c7f12fa28d7c08cc38dbd7f7423}
+  - {path: policy/rules/attack_domain/ethnic_discrimination.yaml, size: 1364, sha256: 5146fe3f46947a42f1adcbf3b185cc0ac592c7dcccfa9e48f0f40fc7e693d52d}
+  - {path: policy/rules/attack_domain/ethnic_hatred.yaml, size: 898, sha256: 79ae082017dbbcd0046d222db49653d1289259ab3d64a85121550605a14a797a}
+  - {path: policy/rules/attack_domain/gender_discrimination.yaml, size: 1350, sha256: a38f9e0cc4b2607cb6735d0f5beb474e521c3d86c018a91809df35110265c480}
+  - {path: policy/rules/attack_domain/health_discrimination.yaml, size: 1358, sha256: 2e8fb9d67189258124b0f63554e6f6d2adaf3729268fe999d06b2d65b35c1215}
+  - {path: policy/rules/attack_domain/nationality_discrimination.yaml, size: 1374, sha256: c396b70e11a7632c8ca89cbb2a45b4e27ccc7468637e0b941bb466b1a854d83e}
+  - {path: policy/rules/attack_domain/occupation_discrimination.yaml, size: 1505, sha256: 6b7b14746719a29d16a3be9d5e902a2129824d3a038aed44c1882e57c22ddc6b}
+  - {path: policy/rules/attack_domain/other_discrimination.yaml, size: 1878, sha256: c827e9d81de86ef683b95f719c1ae856723d4bb73acd1c11b7db3d3d4ac0c8cb}
+  - {path: policy/rules/attack_domain/regional_discrimination.yaml, size: 1394, sha256: 312c4fa86c7c617f86af06bfe7e3b340bcfd9d964e440a8d7062a8e0bdb47924}
+  - {path: policy/rules/attack_domain/religious_discrimination.yaml, size: 1341, sha256: 7a56f9c2b9eaaa8c8555080b7db65d165b99ff67794f42bf915bad42bec41805}
+  - {path: policy/rules/attack_method/cross_language_attack.yaml, size: 869, sha256: 9965e124d7e3998c318e707aa2417c87c99a10f0717e585761ed846dd381a5a3}
+  - {path: policy/rules/attack_method/cross_modal_attack.yaml, size: 889, sha256: 049a8aa044dd71a8acf99a261e215d87a1e01f7e49ae37436814cb7405095a5a}
+  - {path: policy/rules/attack_method/encoding_obfuscation.yaml, size: 884, sha256: 93079a310942a08a8b4884c20a2ed707e10f0f82c2d2e0e6e55cd6aa3d459a42}
+  - {path: policy/rules/attack_method/jailbreak.yaml, size: 869, sha256: f8de8fd346b6cbab8c6413a3c2e30f35d9780421e2527e1fe3113114abd47312}
+  - {path: policy/rules/attack_method/multi_turn_jailbreak.yaml, size: 882, sha256: 1ca05e1e79425bffba69ab01449f40297995386e4843569965af669dd82d2ecc}
+  - {path: policy/rules/attack_method/prompt_injection.yaml, size: 903, sha256: a73dc6080b527bff7b2233baec3e9fd8db37e60c95e63d77f519ca2c101b6fa3}
+  - {path: prompts/arbiter.txt, size: 1500, sha256: 861f440d4e33affc7f4e3690a56631c262087fca0c9a3771b2f4547d611bcfb9}
+  - {path: prompts/expert.txt, size: 1278, sha256: 0aeba5a26765ada22675e43ecd4e27b6a2e50820185189f8cb37f1d55cf1e1cc}
+  - {path: prompts/judge-a.txt, size: 797, sha256: dadca3f48fe2c942ea3b987021d8d1baca6db41a17f0fdb7bee65ea5d39709cc}
+  - {path: prompts/judge-b.txt, size: 874, sha256: a7a30803535c263b76105695ccd4e4f6857427ec20258cdcc6d6656966398663}
+  - {path: prompts/refusal-reprompt.txt, size: 556, sha256: effd304782e5671c2be9bc608d255e929b666cc111889e4fa1563dc3c2745bdb}
+  - {path: prompts/router.txt, size: 892, sha256: c377c15f563e5f010d58a7483d0126dcd4ca22dfbb4279ad6ec07f5a27c3710b}
+  - {path: schemas/arbiter.json, size: 4938, sha256: f26411a3c7c8b80a125b1333e0a63cc0f361ee4047435253247a96327127b3f5}
+  - {path: schemas/expert.json, size: 2156, sha256: 55db6b0e1881addb2a9127eda77ac7c6c352aacb9fcb2ab2746e9a266d9f5bbe}
+  - {path: schemas/judgment.json, size: 1515, sha256: a9d6a89a3a0a24d1f91efa7d0f08a99af8889e47ef0180c90e93055565014ed0}
+  - {path: schemas/router.json, size: 1712, sha256: 75dfe6ac5fb94575b0b269b9c70b9d67c564a64da0698952407784087c2742ec}

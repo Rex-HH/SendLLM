@@ -47,6 +47,37 @@ func TestRunner_RunPreservesTaskCancellationDuringClaim(t *testing.T) {
 	}
 }
 
+func TestClassificationRequestResponseSceneIncludesPrompt(t *testing.T) {
+	item := dao.Item{
+		TraceID:  "response-scene",
+		Prompt:   "原始用户提示词",
+		Response: "模型生成回复",
+	}
+	request, err := classificationRequest(
+		item,
+		[]byte("synthetic system prompt"),
+		"response",
+		[]byte(`{"type":"object"}`),
+		"json_object",
+	)
+	if err != nil {
+		t.Fatalf("classificationRequest() error = %v", err)
+	}
+	if len(request.Messages) != 2 {
+		t.Fatalf("messages = %d, want 2", len(request.Messages))
+	}
+	var input dto.ModelInput
+	if err := json.Unmarshal([]byte(request.Messages[1].Content), &input); err != nil {
+		t.Fatalf("user message is not JSON: %v", err)
+	}
+	if input.Scene != "response" || input.Prompt != item.Prompt || input.Response != item.Response {
+		t.Fatalf(
+			"model input = %#v, want scene=response, original prompt and response preserved",
+			input,
+		)
+	}
+}
+
 func TestRunner_RunPreservesCallerCancellationAfterRetryLookup(t *testing.T) {
 	store := openRunnerInternalStore(t)
 	seedRunnerInternalItems(t, store, runnerInternalItem("missing-retry-time", dao.ItemRetryWait))

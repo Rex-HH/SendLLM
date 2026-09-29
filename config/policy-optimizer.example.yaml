@@ -1,0 +1,82 @@
+version: 1
+iteration:
+  id: ITER-001
+  dir: ./iterations/ITER-001
+policy:
+  releases_dir: ./policy/releases
+  base_version: p04b-v1.0
+  target_version: p04b-v1.1
+skills:
+  root: ./policy-optimization/skills
+  manifest: ./policy-optimization/skills/manifest.yaml
+models:
+  profiles:
+    minimax_miner:
+      family: minimax
+      base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+      api_key_env: AI_GATEWAY_API_KEY
+      name: MiniMax-M2.5
+      structured_output: json_object
+      max_tokens: 4000
+      timeout: 90s
+      quota_group: minimax_shared
+    qwen_merger:
+      family: qwen
+      base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+      api_key_env: AI_GATEWAY_API_KEY
+      name: qwen3-max
+      structured_output: json_object
+      max_tokens: 4000
+      timeout: 90s
+    qwen_critic:
+      family: qwen
+      base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+      api_key_env: AI_GATEWAY_API_KEY
+      name: qwen3-max
+      structured_output: json_object
+      max_tokens: 4000
+      timeout: 90s
+    deepseek_policy:
+      family: deepseek
+      base_url: https://aigateway.venusgroup.com.cn/ai/aliyun/openai
+      api_key_env: AI_GATEWAY_API_KEY
+      name: deepseek-v4-pro
+      structured_output: json_object
+      max_tokens: 4000
+      timeout: 90s
+  roles:
+    source_interpreter: {primary: minimax_miner, fallbacks: [], concurrency: 2, requests_per_minute: 0, tokens_per_minute: 0}
+    local_miner: {primary: minimax_miner, fallbacks: [], concurrency: 4, requests_per_minute: 0, tokens_per_minute: 0}
+    global_merger: {primary: qwen_merger, fallbacks: [], concurrency: 2, requests_per_minute: 0, tokens_per_minute: 0}
+    case_adjudicator: {primary: deepseek_policy, fallbacks: [], concurrency: 2, requests_per_minute: 0, tokens_per_minute: 0}
+    policy_diagnoser: {primary: deepseek_policy, fallbacks: [], concurrency: 2, requests_per_minute: 0, tokens_per_minute: 0}
+    rule_author: {primary: deepseek_policy, fallbacks: [], concurrency: 1, requests_per_minute: 0, tokens_per_minute: 0}
+    critic: {primary: qwen_critic, fallbacks: [], concurrency: 1, requests_per_minute: 0, tokens_per_minute: 0}
+    change_resolver: {primary: deepseek_policy, fallbacks: [], concurrency: 1, requests_per_minute: 0, tokens_per_minute: 0}
+  quota_groups:
+    minimax_shared: {concurrency: 4, requests_per_minute: 0, tokens_per_minute: 0}
+batching:
+  homogeneous_percent: 70
+  conflict_percent: 20
+  random_percent: 10
+  target_size: 50
+  min_size: 30
+  max_size: 100
+context:
+  max_input_tokens: 24000
+  max_artifacts: 100
+retry:
+  transient_attempts_per_model: 3
+  format_repair_attempts: 1
+  refusal_reprompt_attempts: 1
+  initial_backoff: 1s
+  max_backoff: 60s
+regression:
+  contracts_dir: ./policy-optimization/regression/contracts
+  approved_gold_dir: ./policy-optimization/regression/gold
+  hidden_gold: ./Safety_Review_P04B_Hidden.jsonl
+  gate_policy: ./policy-optimization/regression/gates/p04b-gate-v1.yaml
+  safety_review_config: ./config/safety-review-eval.example.yaml
+output:
+  status_interval: 5s
+  shutdown_timeout: 30s

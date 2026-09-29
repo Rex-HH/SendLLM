@@ -7,6 +7,7 @@
 !**/testdata/*.jsonl
 !**/testdata/**/*.jsonl
 data/
+runs/
 .sendllm-export-[0-9]*
 .sendllm-export-backup-[0-9]*
 
@@ -24,6 +25,11 @@ coverage.out
 # Editor metadata
 .idea/
 .DS_Store
+
+# Local agent/tool metadata
+.dsm-project
+__pycache__/
+*.py[cod]
 
 # Isolated implementation worktrees
 .worktrees/

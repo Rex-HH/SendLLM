@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"sendllm/internal/dto"
@@ -24,6 +25,7 @@ const maxResponseBytes = 4 * 1024 * 1024
 type Config struct {
 	BaseURL        string
 	APIKey         string
+	APIKeys        []APIKey
 	Model          string
 	Temperature    *float64
 	TopP           *float64
@@ -34,10 +36,17 @@ type Config struct {
 	MaxConnections int
 }
 
+// APIKey 保存单个供应商凭据的环境变量名和值。
+type APIKey struct {
+	Env   string
+	Value string
+}
+
 // OpenAI 是 OpenAI Chat Completions 协议的标准库客户端。
 type OpenAI struct {
 	baseURL     string
-	apiKey      string
+	apiKeys     []APIKey
+	nextKey     atomic.Uint64
 	model       string
 	temperature *float64
 	topP        *float64
@@ -51,7 +60,8 @@ var _ service.Completer = (*OpenAI)(nil)
 
 // NewOpenAI 校验配置并创建可复用的 HTTP 客户端。
 func NewOpenAI(cfg Config) (*OpenAI, error) {
-	if cfg.BaseURL == "" || cfg.APIKey == "" || cfg.Model == "" {
+	apiKeys := normalizeAPIKeys(cfg)
+	if cfg.BaseURL == "" || len(apiKeys) == 0 || cfg.Model == "" {
 		return nil, errors.New("openai configuration requires base URL, API key, and model")
 	}
 	if cfg.MaxTokens <= 0 || cfg.Timeout <= 0 || cfg.MaxConnections < 1 {
@@ -73,7 +83,7 @@ func NewOpenAI(cfg Config) (*OpenAI, error) {
 	}
 	return &OpenAI{
 		baseURL:     baseURL,
-		apiKey:      cfg.APIKey,
+		apiKeys:     apiKeys,
 		model:       cfg.Model,
 		temperature: cfg.Temperature,
 		topP:        cfg.TopP,
@@ -93,6 +103,8 @@ func (o *OpenAI) Complete(ctx context.Context, req dto.CompletionRequest) (dto.C
 	if err != nil {
 		return dto.CompletionResponse{}, err
 	}
+	apiKey := o.selectAPIKey()
+	completion := dto.CompletionResponse{APIKeyEnv: apiKey.Env}
 	httpRequest, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
@@ -100,14 +112,14 @@ func (o *OpenAI) Complete(ctx context.Context, req dto.CompletionRequest) (dto.C
 		bytes.NewReader(body),
 	)
 	if err != nil {
-		return dto.CompletionResponse{}, &dto.ProviderError{Kind: dto.ProviderBadRequest, Err: err}
+		return completion, &dto.ProviderError{Kind: dto.ProviderBadRequest, Err: err}
 	}
-	httpRequest.Header.Set("Authorization", "Bearer "+o.apiKey)
+	httpRequest.Header.Set("Authorization", "Bearer "+apiKey.Value)
 	httpRequest.Header.Set("Content-Type", "application/json")
 
 	response, err := o.client.Do(httpRequest)
 	if err != nil {
-		return dto.CompletionResponse{}, providerNetworkError(err)
+		return completion, providerNetworkError(err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
@@ -119,11 +131,12 @@ func (o *OpenAI) Complete(ctx context.Context, req dto.CompletionRequest) (dto.C
 		if providerErr.Kind == dto.ProviderBadRequest && isContentRiskResponse(rawResponse) {
 			providerErr.Kind = dto.ProviderContentRejected
 		}
-		return dto.CompletionResponse{RawResponse: rawResponse}, providerErr
+		completion.RawResponse = rawResponse
+		return completion, providerErr
 	}
 
 	rawResponse, err := readResponse(response.Body)
-	completion := dto.CompletionResponse{RawResponse: append([]byte(nil), rawResponse...)}
+	completion.RawResponse = append([]byte(nil), rawResponse...)
 	if err != nil {
 		return completion, &dto.ProviderError{Kind: dto.ProviderMalformedResponse, Err: err}
 	}
@@ -145,6 +158,30 @@ func (o *OpenAI) Complete(ctx context.Context, req dto.CompletionRequest) (dto.C
 	completion.FinishReason = choice.FinishReason
 	completion.Usage = decoded.Usage
 	return completion, nil
+}
+
+// normalizeAPIKeys 合并新旧配置形式并过滤空 key 值。
+func normalizeAPIKeys(cfg Config) []APIKey {
+	if len(cfg.APIKeys) > 0 {
+		keys := make([]APIKey, 0, len(cfg.APIKeys))
+		for _, key := range cfg.APIKeys {
+			if strings.TrimSpace(key.Value) == "" {
+				continue
+			}
+			keys = append(keys, APIKey{Env: strings.TrimSpace(key.Env), Value: key.Value})
+		}
+		return keys
+	}
+	if strings.TrimSpace(cfg.APIKey) == "" {
+		return nil
+	}
+	return []APIKey{{Value: cfg.APIKey}}
+}
+
+// selectAPIKey 以并发安全轮询方式选择本次请求使用的凭据。
+func (o *OpenAI) selectAPIKey() APIKey {
+	index := o.nextKey.Add(1) - 1
+	return o.apiKeys[index%uint64(len(o.apiKeys))]
 }
 
 func (o *OpenAI) requestBody(req dto.CompletionRequest) ([]byte, error) {
@@ -262,7 +299,9 @@ func isContentRiskResponse(rawResponse []byte) bool {
 	if strings.EqualFold(decoded.Error.Message, "Content Exists Risk") {
 		return true
 	}
-	return decoded.Error.Type == "data_inspection_failed" || decoded.Error.Code == "data_inspection_failed"
+	return decoded.Error.Type == "data_inspection_failed" ||
+		decoded.Error.Code == "data_inspection_failed" ||
+		decoded.Error.Code == "1301"
 }
 
 func retryAfter(value string, now time.Time) time.Duration {

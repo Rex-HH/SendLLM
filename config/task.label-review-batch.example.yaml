@@ -1,0 +1,39 @@
+task:
+  id: task-12
+  input: ../data/v1-test/xguard-v1-prompt-label-review-input.jsonl
+  output: ../data/final/xguard-v1-prompt-label-review-final.jsonl
+  state: ../data/v1-test/xguard-v1-prompt-label-review-state.db
+
+model:
+  base_url: https://aigateway.venusgroup.com.cn/ai/deepseek/openai
+  api_key_env: AI_GATEWAY_API_KEY
+  name: deepseek-v4-pro
+  structured_output: json_object
+  temperature: 0
+  top_p: 1
+  max_tokens: 4000
+  timeout: 120s
+
+prompt:
+  system_file: ../prompts/label-review-batch-system.txt
+  scene: auto
+  risk_types_file: risk-types.yaml
+
+runtime:
+  concurrency: 3
+  requests_per_minute: 0
+  tokens_per_minute: 0
+  shutdown_timeout: 30s
+  batch_size: 3
+  batch_max_input_tokens: 12000
+
+retry:
+  request_max_attempts: 6
+  format_repair_attempts: 0
+  initial_backoff: 2s
+  max_backoff: 60s
+
+output:
+  schema_file: result-schema-v2.json
+  explanation_min_length: 10
+  explanation_max_length: 70

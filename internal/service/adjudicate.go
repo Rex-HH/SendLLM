@@ -63,11 +63,13 @@ type adjudicateMetaSourceFields struct {
 }
 
 type adjudicateLabel struct {
-	Label     string `json:"label"`
-	RiskType  string `json:"risk_type"`
-	RiskLevel string `json:"risk_level"`
-	CaseType  string `json:"case_type"`
-	IsAttack  bool   `json:"is_attack"`
+	Label        string `json:"label"`
+	RiskType     string `json:"risk_type"`
+	RiskLevel    string `json:"risk_level"`
+	AttackMethod string `json:"attack_method,omitempty"`
+	AttackDomain string `json:"attack_domain,omitempty"`
+	CaseType     string `json:"case_type"`
+	IsAttack     bool   `json:"is_attack"`
 }
 
 type adjudicatePrompt struct {
@@ -378,6 +380,8 @@ func buildMASBOutput(scene string, record adjudicateInput, annotation dto.Annota
 	if annotation.ExtendedInfo != nil {
 		extended.RiskType = annotation.ExtendedInfo.RiskType
 		extended.RiskLevel = annotation.ExtendedInfo.RiskLevel
+		extended.AttackMethod = annotation.ExtendedInfo.AttackMethod
+		extended.AttackDomain = annotation.ExtendedInfo.AttackDomain
 		extended.AttackScenario = annotation.ExtendedInfo.AttackScenario
 		extended.Other = annotation.ExtendedInfo.Other
 		extended.Extra = annotation.ExtendedInfo.Extra

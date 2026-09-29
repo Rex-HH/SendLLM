@@ -1,0 +1,95 @@
+version: 1
+task:
+  id: p04b-pilot-001
+  input: ./Safety_Review_P04B_Input.jsonl
+  task_dir: ./runs/p04b-pilot-001
+  scene: response
+policy:
+  bundle_dir: ./policy/releases/p04b-v1.0
+models:
+  profiles:
+    glm_5_2:
+      family: glm
+      base_url: "https://provider.invalid/v1"
+      api_key_env: GLM_API_KEY
+      name: GLM-5.3-Flash
+      structured_output: json_object
+      max_tokens: 2000
+      timeout: 90s
+    qwen3_max:
+      family: qwen
+      base_url: "https://provider.invalid/v1"
+      api_key_env: QWEN_API_KEY
+      name: qwen3-max
+      structured_output: json_object
+      max_tokens: 2000
+      timeout: 90s
+    minimax_m2_5:
+      family: minimax
+      base_url: "https://provider.invalid/v1"
+      api_key_env: MINIMAX_API_KEY
+      name: MiniMax-M2.5
+      structured_output: json_object
+      max_tokens: 2000
+      timeout: 90s
+      quota_group: minimax_shared
+    deepseek_v4_pro:
+      family: deepseek
+      base_url: "https://aigateway.venusgroup.com.cn/ai/aliyun/openai"
+      api_key_env: AI_GATEWAY_API_KEY
+      name: deepseek-v4-pro
+      structured_output: json_object
+      max_tokens: 2000
+      timeout: 90s
+  roles:
+    judge_a:
+      primary: glm_5_2
+      fallbacks: [deepseek_v4_pro]
+      concurrency: 4
+      requests_per_minute: 0
+      tokens_per_minute: 0
+    judge_b:
+      primary: qwen3_max
+      fallbacks: [minimax_m2_5]
+      concurrency: 4
+      requests_per_minute: 0
+      tokens_per_minute: 0
+    router:
+      primary: minimax_m2_5
+      fallbacks: [qwen3_max]
+      concurrency: 2
+      requests_per_minute: 0
+      tokens_per_minute: 0
+    expert:
+      primary: minimax_m2_5
+      fallbacks: [deepseek_v4_pro]
+      concurrency: 4
+      requests_per_minute: 0
+      tokens_per_minute: 0
+    arbiter:
+      primary: deepseek_v4_pro
+      fallbacks: [glm_5_2]
+      concurrency: 2
+      requests_per_minute: 0
+      tokens_per_minute: 0
+  quota_groups:
+    minimax_shared:
+      concurrency: 4
+      requests_per_minute: 0
+      tokens_per_minute: 0
+runtime:
+  shutdown_timeout: 30s
+  status_interval: 5s
+retry:
+  transient_attempts_per_model: 3
+  format_repair_attempts: 1
+  refusal_reprompt_attempts: 1
+  initial_backoff: 1s
+  max_backoff: 60s
+output:
+  clean: clean.jsonl
+  audit: audit.jsonl
+  quality_events: quality-events.jsonl
+  quarantine: quarantine.jsonl
+  report: report.json
+  run_status: run-status.json

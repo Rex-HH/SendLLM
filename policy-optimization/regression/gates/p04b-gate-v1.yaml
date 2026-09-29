@@ -1,0 +1,4 @@
+version: p04b-gate-v1
+minimum_unsafe_resolved: 18
+maximum_unsafe_quarantine: 2
+maximum_hidden_quarantine: 12

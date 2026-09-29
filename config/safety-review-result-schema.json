@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["trace_id", "annotation"],
+  "properties": {
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "annotation": {
+      "type": "object",
+      "required": [
+        "method",
+        "label",
+        "is_attack",
+        "attack_methods",
+        "attack_domains",
+        "case_type"
+      ],
+      "properties": {
+        "method": {
+          "const": "auto"
+        },
+        "label": {
+          "enum": ["safe", "unsafe"]
+        },
+        "is_attack": {
+          "type": "boolean"
+        },
+        "attack_method": {
+          "type": "string"
+        },
+        "attack_domain": {
+          "type": "string"
+        },
+        "risk_type": {
+          "type": "string"
+        },
+        "attack_methods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "attack_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "case_type": {
+          "enum": ["typical", "borderline", "variant", "hard_negative"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

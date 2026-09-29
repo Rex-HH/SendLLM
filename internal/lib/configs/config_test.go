@@ -22,6 +22,8 @@ func TestLoad(t *testing.T) {
 		{name: "rejects concurrency above account ceiling", yaml: validYAML("concurrency: 501"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects zero cover concurrency", yaml: validYAML("cover_concurrency: 0"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects negative cover RPM", yaml: validYAML("cover_requests_per_minute: -1"), wantErr: configs.ErrInvalidConfig},
+		{name: "rejects zero batch size", yaml: validYAML("batch_size: 0"), wantErr: configs.ErrInvalidConfig},
+		{name: "rejects negative batch max input tokens", yaml: validYAML("batch_max_input_tokens: -1"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects missing result schema", yaml: validYAML("schema_file: missing.json"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects retry maximum below one", yaml: validYAML("request_max_attempts: 0"), wantErr: configs.ErrInvalidConfig},
 		{name: "rejects missing risk placeholder", yaml: validYAML("system_file: missing-risk.txt"), wantErr: configs.ErrInvalidConfig},
@@ -54,6 +56,13 @@ func TestLoad(t *testing.T) {
 					got.Runtime.CoverRequestsPerMinute,
 				)
 			}
+			if got.Runtime.BatchSize != 1 || got.Runtime.BatchMaxInputTokens != 0 {
+				t.Errorf(
+					"batch limits = %d/%d, want default single item and no token cap",
+					got.Runtime.BatchSize,
+					got.Runtime.BatchMaxInputTokens,
+				)
+			}
 			if got.Runtime.ShutdownTimeout != 30*time.Second {
 				t.Errorf("ShutdownTimeout = %s, want 30s", got.Runtime.ShutdownTimeout)
 			}
@@ -84,6 +93,20 @@ func TestLoadAcceptsConfiguredCoverRetryLimits(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsConfiguredBatchLimits(t *testing.T) {
+	got, err := configs.Load(writeConfig(t, validYAML("batch_size: 4\n  batch_max_input_tokens: 12000")))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got.Runtime.BatchSize != 4 || got.Runtime.BatchMaxInputTokens != 12000 {
+		t.Errorf(
+			"batch limits = %d/%d, want 4/12000",
+			got.Runtime.BatchSize,
+			got.Runtime.BatchMaxInputTokens,
+		)
+	}
+}
+
 func TestLoadResolvesRelativePaths(t *testing.T) {
 	got, err := configs.Load(writeConfig(t, validYAML("")))
 	if err != nil {
@@ -107,7 +130,7 @@ func TestSemanticFingerprintIgnoresRuntimeSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() first error = %v", err)
 	}
-	second, err := configs.Load(writeConfig(t, validYAML("concurrency: 500")))
+	second, err := configs.Load(writeConfig(t, validYAML("concurrency: 500\n  batch_size: 8\n  batch_max_input_tokens: 16000")))
 	if err != nil {
 		t.Fatalf("Load() second error = %v", err)
 	}
@@ -124,6 +147,34 @@ func TestSemanticFingerprintIgnoresRuntimeSettings(t *testing.T) {
 	}
 }
 
+func TestSemanticFingerprintIgnoresAPIKeyEnvs(t *testing.T) {
+	first, err := configs.Load(writeConfig(t, validYAML("")))
+	if err != nil {
+		t.Fatalf("Load() first error = %v", err)
+	}
+	secondYAML := strings.Replace(
+		validYAML(""),
+		"api_key_env: SENDLLM_TEST_KEY",
+		"api_key_envs:\n    - SENDLLM_TEST_KEY_A\n    - SENDLLM_TEST_KEY_B",
+		1,
+	)
+	second, err := configs.Load(writeConfig(t, secondYAML))
+	if err != nil {
+		t.Fatalf("Load() second error = %v", err)
+	}
+	firstFingerprint, err := first.SemanticFingerprint()
+	if err != nil {
+		t.Fatalf("first.SemanticFingerprint() error = %v", err)
+	}
+	secondFingerprint, err := second.SemanticFingerprint()
+	if err != nil {
+		t.Fatalf("second.SemanticFingerprint() error = %v", err)
+	}
+	if firstFingerprint != secondFingerprint {
+		t.Errorf("API key envs changed fingerprint: %q != %q", firstFingerprint, secondFingerprint)
+	}
+}
+
 func TestAPIKey(t *testing.T) {
 	config, err := configs.Load(writeConfig(t, validYAML("")))
 	if err != nil {
@@ -136,6 +187,29 @@ func TestAPIKey(t *testing.T) {
 	}
 	if got != "present" {
 		t.Errorf("APIKey() = %q, want present", got)
+	}
+}
+
+func TestAPIKeys(t *testing.T) {
+	yaml := strings.Replace(
+		validYAML(""),
+		"api_key_env: SENDLLM_TEST_KEY",
+		"api_key_envs:\n    - SENDLLM_TEST_KEY_A\n    - SENDLLM_TEST_KEY_B",
+		1,
+	)
+	config, err := configs.Load(writeConfig(t, yaml))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	t.Setenv("SENDLLM_TEST_KEY_A", "key-a")
+	t.Setenv("SENDLLM_TEST_KEY_B", "key-b")
+	got, err := config.APIKeys()
+	if err != nil {
+		t.Fatalf("APIKeys() error = %v", err)
+	}
+	if len(got) != 2 || got[0].Env != "SENDLLM_TEST_KEY_A" || got[0].Value != "key-a" ||
+		got[1].Env != "SENDLLM_TEST_KEY_B" || got[1].Value != "key-b" {
+		t.Fatalf("APIKeys() = %#v, want two named keys", got)
 	}
 }
 

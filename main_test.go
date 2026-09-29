@@ -36,6 +36,27 @@ const (
     "extended_info": {"type": "object"}
   }
 }`
+	cliLabelReviewSchema = `{
+  "type":"object",
+  "additionalProperties":false,
+  "required":["is_attack","case_type","explanation","quality_score","extended_info"],
+  "properties":{
+    "is_attack":{"type":"boolean"},
+    "case_type":{"type":"string","enum":["typical","borderline","variant","hard_negative"]},
+    "explanation":{"type":"string","minLength":10,"maxLength":70},
+    "quality_score":{"type":"number","minimum":0,"maximum":1},
+    "extended_info":{
+      "type":"object",
+      "required":["attack_method","attack_domain"],
+      "properties":{
+        "attack_method":{"type":"string"},
+        "attack_domain":{"type":"string"},
+        "risk_level":{"type":"string","enum":["low","medium","high"]}
+      },
+      "additionalProperties":true
+    }
+  }
+}`
 )
 
 func TestRunReturnsZeroAndWiresConfiguredSchema(t *testing.T) {
@@ -162,6 +183,137 @@ func TestRunAdjudicateOutputsMASBFormat(t *testing.T) {
 	meta, _ := record["annotation"].(map[string]any)
 	if meta["method"] != "auto" {
 		t.Errorf("annotation = %#v, want method auto", meta)
+	}
+	assertNoCLIPayload(t, stdout.String(), stderr.String())
+}
+
+func TestRunReconcileBatchSendsMultipleRowsPerRequest(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls++
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			http.Error(writer, "bad JSON", http.StatusBadRequest)
+			return
+		}
+		var payload struct {
+			Items []struct {
+				TraceID string `json:"trace_id"`
+			} `json:"items"`
+		}
+		if len(body.Messages) != 2 || json.Unmarshal([]byte(body.Messages[1].Content), &payload) != nil {
+			http.Error(writer, "bad batch payload", http.StatusBadRequest)
+			return
+		}
+		if len(payload.Items) != 2 || payload.Items[0].TraceID == payload.Items[1].TraceID {
+			http.Error(writer, "bad batch size", http.StatusBadRequest)
+			return
+		}
+		writeCLICompletion(t, writer, fmt.Sprintf(`{"results":[
+			{"trace_id":%q,"is_attack":false,"case_type":"typical","explanation":"synthetic safe explanation"},
+			{"trace_id":%q,"is_attack":false,"case_type":"typical","explanation":"synthetic safe explanation"}
+		]}`, payload.Items[0].TraceID, payload.Items[1].TraceID))
+	}))
+	defer server.Close()
+	t.Setenv(cliAPIKeyEnv, cliAPIKey)
+	paths := writeCLIConfigWithMode(t, server.URL, cliAPIKeyEnv, "json_object")
+	writeMainFile(t, paths.input,
+		compactCLIInput(cliPrompt, "")+
+			strings.Replace(compactCLIInput(cliPrompt, ""), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", 1),
+	)
+	replaceMainConfig(t, paths.config, "concurrency: 1", "concurrency: 1\n  batch_size: 2")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run(context.Background(), []string{"-mode", "reconcile-batch", "-config", paths.config}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if calls != 1 {
+		t.Fatalf("provider calls = %d, want one batch request", calls)
+	}
+	if records := readMainJSONL(t, paths.output); len(records) != 2 {
+		t.Fatalf("output records = %d, want 2", len(records))
+	}
+	assertNoCLIPayload(t, stdout.String(), stderr.String())
+}
+
+func TestRunLabelReviewBatchUsesUnifiedInput(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls++
+		var body struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			http.Error(writer, "bad JSON", http.StatusBadRequest)
+			return
+		}
+		var payload struct {
+			Items []struct {
+				TraceID       string `json:"trace_id"`
+				Scene         string `json:"scene"`
+				OriginalLabel struct {
+					AttackDomain string `json:"attack_domain"`
+					RiskLevel    string `json:"risk_level"`
+				} `json:"original_label"`
+			} `json:"items"`
+		}
+		if len(body.Messages) != 2 || json.Unmarshal([]byte(body.Messages[1].Content), &payload) != nil {
+			http.Error(writer, "bad label review payload", http.StatusBadRequest)
+			return
+		}
+		if len(payload.Items) != 1 ||
+			payload.Items[0].Scene != "response" ||
+			payload.Items[0].OriginalLabel.AttackDomain != "privacy_right_infringement" {
+			http.Error(writer, "bad unified original label", http.StatusBadRequest)
+			return
+		}
+		writeCLICompletion(t, writer, fmt.Sprintf(`{"results":[
+			{
+				"trace_id":%q,
+				"is_attack":true,
+				"case_type":"borderline",
+				"explanation":"模型确认回复存在隐私风险。",
+				"quality_score":0.9,
+				"extended_info":{"attack_method":"","attack_domain":"privacy_right_infringement","risk_level":"high"}
+			}
+		]}`, payload.Items[0].TraceID))
+	}))
+	defer server.Close()
+	t.Setenv(cliAPIKeyEnv, cliAPIKey)
+	paths := writeCLIConfigWithMode(t, server.URL, cliAPIKeyEnv, "json_object")
+	writeMainFile(t, paths.schema, cliLabelReviewSchema)
+	writeMainFile(t, paths.input, labelReviewCLIInput())
+	replaceMainConfig(t, paths.config, "concurrency: 1", "concurrency: 1\n  batch_size: 1")
+	writeMainFile(t, filepath.Join(filepath.Dir(paths.config), "risk-types.yaml"),
+		"privacy_right_infringement: 隐私权侵害\n")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := run(context.Background(), []string{"-mode", "label-review-batch", "-config", paths.config}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run() code = %d, want 0; stderr=%q", code, stderr.String())
+	}
+	if calls != 1 {
+		t.Fatalf("provider calls = %d, want one label review batch request", calls)
+	}
+	records := readMainJSONL(t, paths.output)
+	if len(records) != 1 || records[0]["scene"] != "response" {
+		t.Fatalf("output records = %#v, want one response record", records)
+	}
+	extended, _ := records[0]["extended_info"].(map[string]any)
+	if extended["attack_domain"] != "privacy_right_infringement" {
+		t.Fatalf("extended_info = %#v, want privacy domain", extended)
 	}
 	assertNoCLIPayload(t, stdout.String(), stderr.String())
 }
@@ -490,6 +642,20 @@ func differenceCLIInput() string {
 	)
 }
 
+// labelReviewCLIInput 生成标准标签复核模式使用的统一入口行。
+func labelReviewCLIInput() string {
+	return fmt.Sprintf(
+		`{"trace_id":"dataset:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",`+
+			`"source":"v1","split":"train","language":"zh","scene":"response","label":"unsafe",`+
+			`"prompt":%q,"response":%q,"explanation":"原始隐私风险理由。",`+
+			`"extended_info":{"attack_method":"","attack_domain":"privacy_right_infringement",`+
+			`"risk_level":"high","case_type":"borderline","is_attack":true},`+
+			`"annotation":{"method":"source_mapping","quality_score":null}}`+"\n",
+		cliPrompt,
+		cliResponse,
+	)
+}
+
 func newCLIProvider(t *testing.T, modelOutput, mode string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -636,5 +802,151 @@ func assertNoCLIPayload(t *testing.T, outputs ...string) {
 				t.Errorf("CLI output contains sensitive fixture %q", secret)
 			}
 		}
+	}
+}
+
+func TestRunAdvertisementReviewBatch(t *testing.T) {
+	t.Setenv(cliAPIKeyEnv, cliAPIKey)
+	dir := t.TempDir()
+	input := filepath.Join(dir, "input.json")
+	source := `[{"trace_id":"ad-main-001","scene":"prompt","label":"safe","prompt":"safe synthetic content","extended_info":{"attack_scenario":""}},{"trace_id":"ad-main-002","scene":"prompt","label":"unsafe","prompt":"unsafe synthetic advertisement","response":"private response","explanation":"private explanation","source":"private source","quality_score":0.9,"extended_info":{"attack_scenario":"wechat_contact"}}]`
+	if err := os.WriteFile(input, []byte(source), 0o600); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+	output := filepath.Join(dir, "review", "clean.original.jsonl")
+	state := filepath.Join(dir, "state.db")
+	var compactPayload string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("provider path = %q", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var request struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode provider request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if len(request.Messages) != 2 || request.Messages[0].Role != "system" || request.Messages[1].Role != "user" {
+			t.Errorf("provider messages = %+v", request.Messages)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		compactPayload = request.Messages[1].Content
+		var payload struct {
+			Items []map[string]json.RawMessage `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(compactPayload), &payload); err != nil || len(payload.Items) != 2 {
+			t.Errorf("compact payload decode error = %v, items = %d", err, len(payload.Items))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		for _, item := range payload.Items {
+			if len(item) != 3 {
+				t.Errorf("compact item keys = %v", item)
+			}
+			for _, key := range []string{"i", "p", "s"} {
+				if _, ok := item[key]; !ok {
+					t.Errorf("compact item missing %s", key)
+				}
+			}
+		}
+		for _, forbidden := range []string{"ad-main-001", "ad-main-002", "trace_id", "label", "response", "explanation", "source", "quality_score"} {
+			if strings.Contains(compactPayload, forbidden) {
+				t.Errorf("compact payload contains forbidden field/value %q", forbidden)
+			}
+		}
+		result := `{"r":[{"i":0,"l":1,"x":"","s":0},{"i":1,"l":2,"x":"","s":0}]}`
+		response := map[string]any{
+			"choices": []map[string]any{{
+				"message":       map[string]any{"role": "assistant", "content": result},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 4},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			t.Errorf("encode provider response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	root, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	configPath := filepath.Join(dir, "task.yaml")
+	config := fmt.Sprintf(`task:
+  id: advertisement-review-cli-test
+  input: %s
+  output: %s
+  state: %s
+model:
+  base_url: %s
+  api_key_env: %s
+  name: fake-model
+  structured_output: json_object
+  temperature: 0
+  top_p: 1
+  max_tokens: 100
+  timeout: 5s
+prompt:
+  system_file: %s
+  scene: prompt
+  risk_types_file: %s
+runtime:
+  concurrency: 1
+  requests_per_minute: 0
+  tokens_per_minute: 0
+  shutdown_timeout: 1s
+  batch_size: 2
+  batch_max_input_tokens: 10000
+retry:
+  request_max_attempts: 1
+  format_repair_attempts: 0
+  initial_backoff: 1ms
+  max_backoff: 1ms
+output:
+  schema_file: %s
+  explanation_min_length: 1
+  explanation_max_length: 1
+`, input, output, state, server.URL, cliAPIKeyEnv,
+		filepath.Join(root, "prompts", "advertisement-review-batch-system.txt"),
+		filepath.Join(root, "config", "risk-types.yaml"),
+		filepath.Join(root, "config", "advertisement-review-result-schema.json"))
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run(context.Background(), []string{"-config", configPath, "-mode", "advertisement-review-batch"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("run() code = %d, stdout = %q, stderr = %q", code, stdout.String(), stderr.String())
+	}
+	for _, name := range []string{
+		"clean.original.jsonl",
+		"issues.original.jsonl",
+		"issues.manifest.jsonl",
+		"review-report.json",
+	} {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(output), name)); err != nil {
+			t.Fatalf("stat %s: %v", name, err)
+		}
+	}
+	clean, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("read clean output: %v", err)
+	}
+	if !strings.Contains(string(clean), "ad-main-001") || !strings.Contains(string(clean), "ad-main-002") {
+		t.Fatalf("clean output does not preserve original IDs: %s", clean)
+	}
+	if !strings.Contains(stdout.String(), "clean=2") || !strings.Contains(stdout.String(), "issues=0") {
+		t.Fatalf("stdout = %q", stdout.String())
 	}
 }

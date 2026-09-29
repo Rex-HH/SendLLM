@@ -39,8 +39,20 @@ func (e *ValidationError) Unwrap() error {
 type Validator struct {
 	schema         *jsonschema.Schema
 	riskTypes      map[string]string
+	attackMethods  map[string]string
+	attackDomains  map[string]string
 	minExplanation int
 	maxExplanation int
+}
+
+var attackMethodRiskTypes = map[string]struct{}{
+	"prompt_injection":        {},
+	"jailbreak":               {},
+	"encoding_obfuscation":    {},
+	"cross_language_attack":   {},
+	"cross_modal_attack":      {},
+	"multi_turn_jailbreak":    {},
+	"financial_domain_attack": {},
 }
 
 // NewValidator 编译 Schema 并复制风险分类闭集。
@@ -64,12 +76,21 @@ func NewValidator(
 	}
 
 	clonedRiskTypes := make(map[string]string, len(riskTypes))
+	attackMethods := make(map[string]string)
+	attackDomains := make(map[string]string)
 	for name, description := range riskTypes {
 		clonedRiskTypes[name] = description
+		if _, ok := attackMethodRiskTypes[name]; ok {
+			attackMethods[name] = description
+			continue
+		}
+		attackDomains[name] = description
 	}
 	return &Validator{
 		schema:         compiled,
 		riskTypes:      clonedRiskTypes,
+		attackMethods:  attackMethods,
+		attackDomains:  attackDomains,
 		minExplanation: minExplanation,
 		maxExplanation: maxExplanation,
 	}, nil
@@ -139,9 +160,19 @@ func (v *Validator) businessProblems(annotation dto.Annotation, decoded any) []s
 			problems = append(problems, "risk_type is not configured")
 		}
 	}
+	if annotation.ExtendedInfo != nil && annotation.ExtendedInfo.AttackMethod != "" {
+		if _, ok := v.attackMethods[annotation.ExtendedInfo.AttackMethod]; !ok {
+			problems = append(problems, "attack_method is not configured")
+		}
+	}
+	if annotation.ExtendedInfo != nil && annotation.ExtendedInfo.AttackDomain != "" {
+		if _, ok := v.attackDomains[annotation.ExtendedInfo.AttackDomain]; !ok {
+			problems = append(problems, "attack_domain is not configured")
+		}
+	}
 	if annotation.IsAttack {
-		if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskType == "" {
-			problems = append(problems, "attack result requires risk_type")
+		if annotation.ExtendedInfo == nil || !hasRiskLabel(annotation.ExtendedInfo) {
+			problems = append(problems, "attack result requires risk_type or attack_method/attack_domain")
 		}
 		if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskLevel == "" {
 			problems = append(problems, "attack result requires risk_level")
@@ -151,16 +182,28 @@ func (v *Validator) businessProblems(annotation dto.Annotation, decoded any) []s
 		if _, ok := extended["risk_level"]; ok {
 			problems = append(problems, "non-attack result must not include risk_level")
 		}
+		if annotation.ExtendedInfo.AttackMethod != "" || annotation.ExtendedInfo.AttackDomain != "" {
+			problems = append(problems, "non-attack result must not include attack_method or attack_domain")
+		}
 	}
 	if annotation.CaseType == "hard_negative" {
 		if annotation.IsAttack {
 			problems = append(problems, "hard_negative requires is_attack false")
 		}
-		if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskType == "" {
-			problems = append(problems, "hard_negative requires risk_type")
+		if !annotation.ExtendedInfo.HasAttackLabels() {
+			if annotation.ExtendedInfo == nil || annotation.ExtendedInfo.RiskType == "" {
+				problems = append(problems, "hard_negative requires risk_type or attack_method/attack_domain")
+			}
 		}
 	}
 	return problems
+}
+
+func hasRiskLabel(extended *dto.ExtendedInfo) bool {
+	if extended == nil {
+		return false
+	}
+	return extended.RiskType != "" || extended.AttackMethod != "" || extended.AttackDomain != ""
 }
 
 func invalidResult(problem string) error {

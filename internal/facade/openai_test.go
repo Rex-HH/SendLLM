@@ -110,6 +110,46 @@ func TestNewOpenAIRejectsNonPositiveMaxTokens(t *testing.T) {
 	}
 }
 
+func TestOpenAI_CompleteRoundRobinsAPIKeys(t *testing.T) {
+	var gotAuth []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = append(gotAuth, r.Header.Get("Authorization"))
+		_, _ = fmt.Fprint(w, completionResponse("stop"))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := facade.NewOpenAI(facade.Config{
+		BaseURL: server.URL,
+		APIKeys: []facade.APIKey{
+			{Env: "KEY_A", Value: "key-a"},
+			{Env: "KEY_B", Value: "key-b"},
+		},
+		Model:          "test-model",
+		MaxTokens:      100,
+		Timeout:        time.Second,
+		MaxConnections: 2,
+	})
+	if err != nil {
+		t.Fatalf("NewOpenAI() error = %v", err)
+	}
+	var gotEnvs []string
+	for range 3 {
+		response, err := client.Complete(context.Background(), completionRequest("json_schema"))
+		if err != nil {
+			t.Fatalf("Complete() error = %v", err)
+		}
+		gotEnvs = append(gotEnvs, response.APIKeyEnv)
+	}
+	wantAuth := []string{"Bearer key-a", "Bearer key-b", "Bearer key-a"}
+	wantEnvs := []string{"KEY_A", "KEY_B", "KEY_A"}
+	if !equalStrings(gotAuth, wantAuth) {
+		t.Fatalf("Authorization sequence = %#v, want %#v", gotAuth, wantAuth)
+	}
+	if !equalStrings(gotEnvs, wantEnvs) {
+		t.Fatalf("APIKeyEnv sequence = %#v, want %#v", gotEnvs, wantEnvs)
+	}
+}
+
 func TestOpenAI_CompleteRateLimited(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "2")
@@ -227,6 +267,10 @@ func TestOpenAI_CompleteClassifiesContentRiskBadRequest(t *testing.T) {
 		{
 			name: "inspection code",
 			body: `{"error":{"message":"synthetic provider detail","type":"data_inspection_failed","code":"data_inspection_failed"}}`,
+		},
+		{
+			name: "zhipu content filter code",
+			body: `{"contentFilter":[{"level":1,"role":"user"}],"error":{"code":"1301","message":"系统检测到输入或生成内容可能包含不安全或敏感内容，请您避免输入易产生敏感内容的提示语，感谢您的配合。"}}`,
 		},
 	}
 	for _, test := range tests {
@@ -452,4 +496,16 @@ func equalJSON(left, right any) bool {
 		return false
 	}
 	return string(leftBytes) == string(rightBytes)
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

@@ -60,11 +60,53 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
+	if err := ensureAttemptAPIKeyEnvColumn(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := normalizeRetryTimes(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	return &Store{db: db}, nil
+}
+
+// ensureAttemptAPIKeyEnvColumn 兼容没有 api_key_env 的旧状态库。
+func ensureAttemptAPIKeyEnvColumn(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info(attempts)")
+	if err != nil {
+		return fmt.Errorf("inspect attempts schema: %w", err)
+	}
+	hasColumn := false
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan attempts schema: %w", err)
+		}
+		if name == "api_key_env" {
+			hasColumn = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("iterate attempts schema: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close attempts schema rows: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+	if _, err := db.ExecContext(ctx, "ALTER TABLE attempts ADD COLUMN api_key_env TEXT"); err != nil {
+		return fmt.Errorf("add attempts api_key_env column: %w", err)
+	}
+	return nil
 }
 
 // Close 关闭底层 SQLite 连接池。

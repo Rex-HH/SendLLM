@@ -220,6 +220,7 @@ git commit -m "feat: partition advertisement review results"
 - Create: `prompts/advertisement-review-batch-system.txt`
 - Create: `config/advertisement-review-result-schema.json`
 - Create: `config/task.advertisement-review.yaml`
+- Create: `config/task.advertisement-review.deepseek-v4-flash.yaml`
 - Modify: `main.go`
 - Modify: `main_test.go`
 - Modify: `README.md`
@@ -256,6 +257,8 @@ model:
 
 Point input at `../data/ad/advertisement_dataset_final.json`, clean output at `../data/ad/review/clean.original.jsonl`, state at `../data/ad/review/advertisement-review.db`, risk types at the existing 38-class file, and result Schema/prompt at the new compact files. Start with conservative concurrency and a large maximum batch count governed by token packing.
 
+Also add an isolated `deepseek-v4-flash` fallback configuration with a different task ID, SQLite state, and output directory. It is used only against the identical pilot after Qwen fails the fixed human gate; a run must never change model inside an existing task state.
+
 - [ ] **Step 5: Wire the new mode in `main.go`**
 
 Construct `service.AdvertisementReviewConfig` from the already loaded config, completer, limiter, risk map, retry policy, and progress callback. Print only aggregate clean/issues/failed counts. Return 2 when terminal provider/format failures exist and 0 when all rows received valid review decisions, regardless of whether semantic issues were found.
@@ -272,7 +275,8 @@ Document the command, four outputs, original-ID guarantee, no-merge boundary, AP
 
 ```bash
 git add main.go main_test.go README.md prompts/advertisement-review-batch-system.txt \
-  config/advertisement-review-result-schema.json config/task.advertisement-review.yaml
+  config/advertisement-review-result-schema.json config/task.advertisement-review.yaml \
+  config/task.advertisement-review.deepseek-v4-flash.yaml
 git commit -m "feat: wire advertisement review batch mode"
 ```
 
